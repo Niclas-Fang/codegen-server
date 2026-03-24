@@ -6,11 +6,11 @@ A Django-based code completion API server for VSCode intelligent coding assistan
 
 ## Features
 
-- **AI-Powered Code Completion**: Uses DeepSeek API for intelligent code suggestions
+- **AI-Powered Code Completion**: Uses DeepSeek FIM API and multi-provider Chat API
+- **Multi-Provider Support**: DeepSeek, OpenAI, Anthropic, Zhipu
 - **RESTful API**: Simple JSON-based API for integration with VSCode plugins
 - **CORS Support**: Built-in CORS headers for cross-origin requests
 - **Error Handling**: Comprehensive error codes and messages
-- **Production Ready**: Includes Gunicorn and Nginx configurations
 - **Modern Tooling**: Uses Pixi for dependency management
 
 ## Quick Start
@@ -52,7 +52,7 @@ A Django-based code completion API server for VSCode intelligent coding assistan
 
 6. **Verify installation**
    ```bash
-   pixi run python test_api_final.py
+   pixi run python test_api.py
    ```
 
 ## API Usage
@@ -111,24 +111,21 @@ codegen-server/
 │   ├── api/                   # Django project settings
 │   ├── completion/            # Completion app
 │   │   ├── views.py          # API endpoints
-│   │   ├── services.py       # DeepSeek API integration
-│   │   ├── models.py         # Database models
+│   │   ├── services.py       # DeepSeek FIM API
+│   │   ├── chat_service.py   # Multi-provider chat API
+│   │   ├── model_providers.py # Provider abstraction
 │   │   └── urls.py           # App URL routing
 │   ├── manage.py             # Django management script
-│   └── test_api_*.py         # Test suites
+│   └── test_api.py           # Test suite
 ├── pixi.toml                 # Pixi dependency configuration
-├── pyrightconfig.json        # Type checking configuration
-├── .gitignore               # Git ignore rules
 └── README.md                # This file
 ```
 
 ## Production Deployment
 
 ### 1. Environment Configuration
-Create a `.env` file:
 ```bash
 DEEPSEEK_API_KEY=your-production-api-key
-DJANGO_SETTINGS_MODULE=api.settings
 DEBUG=False
 ALLOWED_HOSTS=your-domain.com,localhost
 ```
@@ -143,36 +140,6 @@ pixi run gunicorn api.wsgi:application \
   --bind 0.0.0.0:8000 \
   --workers 4 \
   --timeout 120
-```
-
-### 3. Nginx Reverse Proxy (Optional)
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        
-        # CORS configuration
-        add_header 'Access-Control-Allow-Origin' '*';
-        add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS';
-        add_header 'Access-Control-Allow-Headers' 'Content-Type';
-        
-        # Handle OPTIONS preflight requests
-        if ($request_method = 'OPTIONS') {
-            add_header 'Access-Control-Allow-Origin' '*';
-            add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS';
-            add_header 'Access-Control-Allow-Headers' 'Content-Type';
-            add_header 'Content-Type' 'text/plain charset=UTF-8';
-            add_header 'Content-Length' 0;
-            return 204;
-        }
-    }
-}
 ```
 
 ## Error Handling
@@ -198,19 +165,9 @@ server {
 
 ## Testing
 
-### Run Test Suites
 ```bash
-# Run comprehensive test suite (recommended)
-pixi run python test_api_final.py
-
-# Run simplified test suite
-pixi run python test_api_simple.py
-
-# Run original test script
+# Run test suite
 pixi run python test_api.py
-
-# Run Django tests (currently no tests)
-pixi run python manage.py test
 ```
 
 ### Test Categories
@@ -251,9 +208,6 @@ pixi run python manage.py makemigrations
 
 # Apply migrations
 pixi run python manage.py migrate
-
-# Create superuser
-pixi run python manage.py createsuperuser
 ```
 
 ## Troubleshooting
@@ -315,11 +269,6 @@ curl -I http://localhost:8000/api/v1/completion
    pixi run gunicorn api.wsgi:application --workers 8 --threads 4
    ```
 
-3. **Future Optimizations**
-   - Consider adding Redis cache for repeated requests
-   - Implement request batching
-   - Add response compression
-
 ## Maintenance
 
 ### Updating Dependencies
@@ -354,9 +303,8 @@ sudo systemctl restart gunicorn
 
 ## Documentation
 
-- **[API Documentation](codegen/API文档.md)** - Complete API specifications (Chinese)
+- **[API文档.md](codegen/API文档.md)** - Complete API specifications (Chinese)
 - **[AGENTS.md](codegen/AGENTS.md)** - Development guide for AI agents
-- **[IFLOW.md](codegen/IFLOW.md)** - Project overview and workflow
 - **[部署指南.md](codegen/部署指南.md)** - Detailed deployment guide (Chinese)
 
 ## Support
@@ -373,4 +321,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-*Last Updated: 2026-01-23*
+*Last Updated: 2026-03-24*
