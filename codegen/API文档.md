@@ -66,11 +66,11 @@
 
 ## 2. 代码补全接口 (FIM 模式)
 
-### 1.1 接口描述
+### 2.1 接口描述
 
 根据当前代码上下文和光标位置，返回智能代码补全建议。
 
-### 1.2 请求
+### 2.2 请求
 
 **URL**: `/api/v1/completion`
 
@@ -124,9 +124,9 @@ Content-Type: application/json
 }
 ```
 
-### 1.3 响应
+### 2.3 响应
 
-#### 1.3.1 成功响应
+#### 2.3.1 成功响应
 
 **状态码**: `200 OK`
 
@@ -142,7 +142,7 @@ Content-Type: application/json
 }
 ```
 
-#### 1.3.2 字段说明
+#### 2.3.2 字段说明
 
 **顶层字段**:
 
@@ -160,7 +160,7 @@ Content-Type: application/json
 
 
 
-### 1.4 错误响应
+### 2.4 错误响应
 
 **状态码**: `400 Bad Request` 或 `500 Internal Server Error`
 
@@ -311,12 +311,12 @@ Content-Type: application/json
 **智谱AI (zhipu)**:
 | 模型 | 说明 |
 |------|------|
-| glm-4.7 | 最新版，专注于代码生成和 Agent 任务 |
-| glm-4.6 | 增强推理和代码能力 |
-| glm-4.5 | 旗舰版，355B 参数 MoE 架构 |
+| glm-4.7 | 最新版，专注于代码生成和 Agent 任务（推理模型，输出包含思考过程） |
+| glm-4.6 | 增强推理和代码能力（推理模型） |
+| glm-4.5 | 旗舰版，355B 参数 MoE 架构（推理模型） |
 | glm-4.5-air | 轻量版，106B 参数 |
-| glm-4-plus | 增强版通用模型 |
-| glm-4-flash | 快速响应版本 |
+| glm-4-plus | 增强版通用模型，推荐用于代码补全 |
+| glm-4-flash | 快速响应版本，推荐用于代码补全 |
 | glm-4 | 基础版 |
 
 **DeepSeek**:
@@ -350,7 +350,7 @@ Content-Type: application/json
 
 ## 4. 前端对接示例
 
-### 2.1 TypeScript对接代码
+### 4.1 TypeScript对接代码
 
 ```typescript
 import * as vscode from 'vscode';
@@ -526,9 +526,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 ---
 
-## 3. 后端实现示例
+## 5. 后端实现示例
 
-### 3.1 Django视图实现
+### 5.1 Django视图实现
 
 ```python
 from django.http import JsonResponse
@@ -762,37 +762,37 @@ def call_fim_api(prompt, suffix, includes, other_functions, max_tokens):
 
 ---
 
-## 4. 测试用例
+## 6. 测试用例
 
-### 4.1 测试方法说明
+### 6.1 测试方法说明
 
 由于LLM具有不确定性，补全结果可能每次不同，因此不能使用精确匹配的测试方法。建议采用以下测试策略：
 
-#### 4.1.1 模糊匹配测试
+#### 6.1.1 模糊匹配测试
 - 检查返回的代码语法是否正确
 - 检查变量名是否在上下文中存在
 - 检查类型是否匹配
 
-#### 4.1.2 功能性测试
+#### 6.1.2 功能性测试
 - 提供明确的场景（如"计算两个数的和"）
 - 检查补全建议是否完成了预期功能
 - 允许多种实现方式
 
-#### 4.1.3 人工审核测试集
+#### 6.1.3 人工审核测试集
 - 准备一批典型的代码补全场景
 - 人工评估补全建议的质量（相关性、准确性、可用性）
 - 评分标准：完全正确/部分正确/不相关/错误
 
-#### 4.1.4 集成测试
+#### 6.1.4 集成测试
 - 测试API的整体流程（请求→响应→格式）
 - 测试错误处理（参数缺失、格式错误等）
 - 测试边界情况（空输入、超长输入）
 
-#### 4.1.5 性能测试
+#### 6.1.5 性能测试
 - 响应时间是否在可接受范围内
 - 并发请求的处理能力
 
-### 4.2 C++补全测试
+### 6.2 C++补全测试
 
 **请求**:
 ```json
@@ -836,7 +836,7 @@ def call_fim_api(prompt, suffix, includes, other_functions, max_tokens):
 
 ---
 
-## 5. 前端上下文提取策略
+## 7. 前端上下文提取策略
 
 ### 5.1 为什么由前端提取上下文？
 
@@ -936,7 +936,7 @@ int main() {
 
 ---
 
-## 6. FIM API说明
+## 8. FIM API说明
 
 ### 6.1 什么是FIM API？
 
@@ -972,7 +972,7 @@ suffix = """
 
 # API调用
 response = deepseek.fim.completions(
-    model="deepseek-coder",
+    model="deepseek-chat",
     prompt=prompt,
     suffix=suffix
 )
@@ -987,13 +987,13 @@ response = deepseek.fim.completions(
 
 ---
 
-## 7. 部署说明
+## 9. 部署说明
 
 ### 7.1 环境要求
 
 **后端**：
-- Python 3.8+
-- Django 4.0+
+- Python 3.14.1+
+- Django 6.0+
 - requests 库
 
 **前端**：
@@ -1081,7 +1081,7 @@ A: 查看错误码（error_code）：
 
 ---
 
-## 8. 注意事项
+## 10. 注意事项
 
 1. **超时设置**：LLM API调用可能较慢，建议设置合理的超时时间（5-10秒）
 2. **错误重试**：对于临时性错误，可以实现重试机制
@@ -1091,7 +1091,7 @@ A: 查看错误码（error_code）：
 
 ---
 
-## 9. 版本历史
+## 11. 版本历史
 
 | 版本 | 日期 | 说明 |
 |------|------|------|

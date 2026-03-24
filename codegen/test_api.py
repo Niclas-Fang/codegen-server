@@ -666,27 +666,18 @@ class TestRunner:
         """测试有效的 Chat 请求 - 应该成功（如果API密钥有效）"""
         data = {
             "context": {"prompt": "def add(a, b):", "suffix": "\n    return a + b"},
-            "provider": "zhipu",
+            "provider": "deepseek",
         }
         response = requests.post(self.chat_url, json=data, timeout=15)
 
-        assert response.status_code == 200, (
-            f"期望状态码 200, 实际 {response.status_code}"
-        )
+        result = self.check_api_response(response, "Chat有效请求")
 
-        result = response.json()
-        assert "success" in result, "响应应该包含success字段"
-
-        if result["success"]:
-            assert "response" in result, "成功响应应该包含response"
-            response_data = result["response"]
-            assert "text" in response_data, "response应该包含text"
-            assert "model" in response_data, "response应该包含model"
-            assert len(response_data["text"]) > 0, "响应文本不能为空"
-            print(f"  成功: 获得响应 '{response_data['text'][:50]}...'")
-        else:
-            error_code = result.get("error_code", "未知")
-            raise SkipTestException(f"API调用失败: {error_code}")
+        assert "response" in result, "成功响应应该包含response"
+        response_data = result["response"]
+        assert "text" in response_data, "response应该包含text"
+        assert "model" in response_data, "response应该包含model"
+        assert len(response_data["text"]) > 0, "响应文本不能为空"
+        print(f"  成功: 获得响应 '{response_data['text'][:50]}...'")
 
     # ========== Models 端点测试 ==========
 
@@ -726,7 +717,7 @@ class TestRunner:
         data = {
             "context": {"prompt": "def add(a, b):", "suffix": "\n    return a + b"},
             "model": "invalid-model-name",
-            "provider": "zhipu",
+            "provider": "deepseek",
         }
         response = requests.post(self.chat_url, json=data, timeout=5)
 
@@ -835,19 +826,12 @@ class TestRunner:
         long_prompt = "def test():\n" + "    x = 1\n" * 1000
         data = {
             "context": {"prompt": long_prompt, "suffix": "\n    return x"},
-            "provider": "zhipu",
+            "provider": "deepseek",
         }
         response = requests.post(self.chat_url, json=data, timeout=30)
 
-        # 超长输入应该被截断处理
-        assert response.status_code == 200, (
-            f"期望状态码 200, 实际 {response.status_code}"
-        )
-        result = response.json()
-        if result["success"]:
-            print(f"  成功: 超长输入处理完成")
-        else:
-            raise SkipTestException(f"API调用失败: {result.get('error_code', '未知')}")
+        result = self.check_api_response(response, "超长输入测试")
+        print(f"  成功: 超长输入处理完成")
 
     def test_chat_special_characters(self):
         """测试特殊字符处理"""
@@ -856,19 +840,13 @@ class TestRunner:
                 "prompt": 'def test():\n    msg = "你好世界 🌍"\n    ',
                 "suffix": "\n    return msg",
             },
-            "provider": "zhipu",
+            "provider": "deepseek",
         }
         response = requests.post(self.chat_url, json=data, timeout=15)
 
-        assert response.status_code == 200, (
-            f"期望状态码 200, 实际 {response.status_code}"
-        )
-        result = response.json()
-        if result["success"]:
-            assert "response" in result, "成功响应应该包含 response"
-            print(f"  成功: 特殊字符处理通过")
-        else:
-            raise SkipTestException(f"API调用失败: {result.get('error_code', '未知')}")
+        result = self.check_api_response(response, "特殊字符测试")
+        assert "response" in result, "成功响应应该包含 response"
+        print(f"  成功: 特殊字符处理通过")
 
     # ========== 多语言代码补全测试 ==========
 
@@ -879,26 +857,19 @@ class TestRunner:
                 "prompt": "def fibonacci(n):\n    if n <= 1:\n        return n\n    ",
                 "suffix": "\n\nprint(fibonacci(10))",
             },
-            "provider": "zhipu",
+            "provider": "deepseek",
         }
         response = requests.post(self.chat_url, json=data, timeout=15)
 
-        assert response.status_code == 200, (
-            f"期望状态码 200, 实际 {response.status_code}"
+        result = self.check_api_response(response, "Python补全测试")
+        response_text = result["response"]["text"]
+        is_python = any(
+            kw in response_text for kw in ["return", "fibonacci", "n", "def", "="]
         )
-        result = response.json()
-        if result["success"]:
-            response_text = result["response"]["text"]
-            # 检查响应是否包含 Python 相关内容
-            is_python = any(
-                kw in response_text for kw in ["return", "fibonacci", "n", "def", "="]
-            )
-            if is_python:
-                print(f"  成功: Python 代码补全通过")
-            else:
-                print(f"  警告: 响应可能不是有效的 Python 代码")
+        if is_python:
+            print(f"  成功: Python 代码补全通过")
         else:
-            raise SkipTestException(f"API调用失败: {result.get('error_code', '未知')}")
+            print(f"  警告: 响应可能不是有效的 Python 代码")
 
     def test_chat_javascript_completion(self):
         """测试 JavaScript 代码补全"""
@@ -907,27 +878,20 @@ class TestRunner:
                 "prompt": "function calculateSum(a, b) {\n    ",
                 "suffix": "\n}\n\nconsole.log(calculateSum(1, 2));",
             },
-            "provider": "zhipu",
+            "provider": "deepseek",
         }
         response = requests.post(self.chat_url, json=data, timeout=15)
 
-        assert response.status_code == 200, (
-            f"期望状态码 200, 实际 {response.status_code}"
+        result = self.check_api_response(response, "JavaScript补全测试")
+        response_text = result["response"]["text"]
+        is_js = any(
+            kw in response_text
+            for kw in ["return", "const", "let", "var", "a", "b", "+"]
         )
-        result = response.json()
-        if result["success"]:
-            response_text = result["response"]["text"]
-            # 检查响应是否包含 JavaScript 相关内容
-            is_js = any(
-                kw in response_text
-                for kw in ["return", "const", "let", "var", "a", "b", "+"]
-            )
-            if is_js:
-                print(f"  成功: JavaScript 代码补全通过")
-            else:
-                print(f"  警告: 响应可能不是有效的 JavaScript 代码")
+        if is_js:
+            print(f"  成功: JavaScript 代码补全通过")
         else:
-            raise SkipTestException(f"API调用失败: {result.get('error_code', '未知')}")
+            print(f"  警告: 响应可能不是有效的 JavaScript 代码")
 
     def test_chat_java_completion(self):
         """测试 Java 代码补全"""
@@ -936,26 +900,17 @@ class TestRunner:
                 "prompt": "public class Calculator {\n    public int add(int a, int b) {\n        ",
                 "suffix": "\n    }\n}",
             },
-            "provider": "zhipu",
+            "provider": "deepseek",
         }
         response = requests.post(self.chat_url, json=data, timeout=15)
 
-        assert response.status_code == 200, (
-            f"期望状态码 200, 实际 {response.status_code}"
-        )
-        result = response.json()
-        if result["success"]:
-            response_text = result["response"]["text"]
-            # 检查响应是否包含 Java 相关内容
-            is_java = any(
-                kw in response_text for kw in ["return", "a", "b", "+", "int"]
-            )
-            if is_java:
-                print(f"  成功: Java 代码补全通过")
-            else:
-                print(f"  警告: 响应可能不是有效的 Java 代码")
+        result = self.check_api_response(response, "Java补全测试")
+        response_text = result["response"]["text"]
+        is_java = any(kw in response_text for kw in ["return", "a", "b", "+", "int"])
+        if is_java:
+            print(f"  成功: Java 代码补全通过")
         else:
-            raise SkipTestException(f"API调用失败: {result.get('error_code', '未知')}")
+            print(f"  警告: 响应可能不是有效的 Java 代码")
 
     def test_chat_with_includes(self):
         """测试带 includes 的 Chat 请求"""
@@ -965,21 +920,13 @@ class TestRunner:
                 "suffix": "\n    return 0;\n}",
                 "includes": ["#include <iostream>", "#include <vector>"],
             },
-            "provider": "zhipu",
+            "provider": "deepseek",
         }
         response = requests.post(self.chat_url, json=data, timeout=15)
 
-        assert response.status_code == 200, (
-            f"期望状态码 200, 实际 {response.status_code}"
-        )
-
-        result = response.json()
-        if result["success"]:
-            assert "response" in result, "成功响应应该包含response"
-            print(f"  成功: includes 测试通过")
-        else:
-            error_code = result.get("error_code", "未知")
-            raise SkipTestException(f"API调用失败: {error_code}")
+        result = self.check_api_response(response, "includes测试")
+        assert "response" in result, "成功响应应该包含response"
+        print(f"  成功: includes 测试通过")
 
     def test_chat_with_functions(self):
         """测试带 other_functions 的 Chat 请求"""
@@ -998,21 +945,13 @@ class TestRunner:
                     },
                 ],
             },
-            "provider": "zhipu",
+            "provider": "deepseek",
         }
         response = requests.post(self.chat_url, json=data, timeout=15)
 
-        assert response.status_code == 200, (
-            f"期望状态码 200, 实际 {response.status_code}"
-        )
-
-        result = response.json()
-        if result["success"]:
-            assert "response" in result, "成功响应应该包含response"
-            print(f"  成功: other_functions 测试通过")
-        else:
-            error_code = result.get("error_code", "未知")
-            raise SkipTestException(f"API调用失败: {error_code}")
+        result = self.check_api_response(response, "functions测试")
+        assert "response" in result, "成功响应应该包含response"
+        print(f"  成功: other_functions 测试通过")
 
     def test_chat_full_request(self):
         """测试完整的 Chat 请求"""
@@ -1033,27 +972,19 @@ class TestRunner:
                     }
                 ],
             },
-            "model": "glm-4.7",
-            "provider": "zhipu",
+            "model": "deepseek-chat",
+            "provider": "deepseek",
             "max_tokens": 500,
         }
         response = requests.post(self.chat_url, json=data, timeout=15)
 
-        assert response.status_code == 200, (
-            f"期望状态码 200, 实际 {response.status_code}"
-        )
-
-        result = response.json()
-        if result["success"]:
-            assert "response" in result, "成功响应应该包含response"
-            response_data = result["response"]
-            assert response_data["model"] == "glm-4.7", "模型名称应该匹配"
-            assert len(response_data["text"]) > 0, "响应文本不能为空"
-            print(f"  成功: 完整请求测试通过")
-            print(f"  响应: {response_data['text'][:80]}...")
-        else:
-            error_code = result.get("error_code", "未知")
-            raise SkipTestException(f"API调用失败: {error_code}")
+        result = self.check_api_response(response, "完整Chat请求测试")
+        assert "response" in result, "成功响应应该包含response"
+        response_data = result["response"]
+        assert response_data["model"] == "deepseek-chat", "模型名称应该匹配"
+        assert len(response_data["text"]) > 0, "响应文本不能为空"
+        print(f"  成功: 完整请求测试通过")
+        print(f"  响应: {response_data['text'][:80]}...")
 
 
 def main():

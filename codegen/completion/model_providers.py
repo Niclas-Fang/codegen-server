@@ -63,7 +63,7 @@ SUPPORTED_MODELS = {
             "glm-4-flash",
             "glm-4",
         ],
-        "default": "glm-4-flash",
+        "default": "glm-4.7",
         "description": {
             "glm-4.7": "GLM-4.7 最新版，专注于代码生成和 Agent 任务（推理模型，输出包含思考过程）",
             "glm-4.6": "GLM-4.6，增强推理和代码能力（推理模型）",
