@@ -200,8 +200,9 @@ cython_debug/
 # VS Code
 .vscode/
 
-# iFlow
-.iflow/
-
 # PDF
 *.pdf
+codegen/项目进展报告.md
+.gitignore
+codegen/.sisyphus
+.gitignore
