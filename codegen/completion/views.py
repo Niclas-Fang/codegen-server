@@ -125,12 +125,18 @@ def chat(request):
         model = data.get("model")
         max_tokens = data.get("max_tokens", 1000)
         provider = data.get("provider", "zhipu")
+        use_rag = data.get("use_rag", True)
+        use_graph_rag = data.get("use_graph_rag", True)
+        project_path = data.get("project_path", "")
 
         response = call_chat_api(
             context=context,
             model=model,
             max_tokens=max_tokens,
             provider=provider,
+            use_rag=use_rag,
+            use_graph_rag=use_graph_rag,
+            project_path=project_path,
         )
 
         return JsonResponse({"success": True, "response": response})

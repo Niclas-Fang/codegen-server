@@ -183,6 +183,62 @@ Content-Type: application/json
 | API_ERROR | 500 | LLM API返回错误 |
 | INTERNAL_ERROR | 500 | 服务器内部错误 |
 
+---
+
+## 4. RAG 配置说明
+
+### 4.1 什么是 Graph-RAG？
+
+Graph-RAG（Graph-based Retrieval-Augmented Generation）是传统 RAG 的增强版本。它不仅使用语义相似度检索代码片段，还构建了代码的**知识图谱**，通过图遍历发现相关代码：
+
+- **传统 RAG**：只找语义相似的代码（"这个函数看起来像你写的"）
+- **Graph-RAG**：找语义相似 + 调用关系 + 继承关系 + 导入依赖的代码（"这个函数调用了你写的函数，所以可能相关"）
+
+### 4.2 Graph-RAG 架构
+
+```
+代码文件 → AST解析 → 实体（函数/类/导入）
+                    ↓
+            关系（调用/继承/包含）
+                    ↓
+            知识图谱(NetworkX) + 向量库(FAISS)
+                    ↓
+            检索：语义搜索种子 → 图遍历扩展 → 混合排序
+```
+
+### 4.3 RAG 参数说明
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `use_rag` | `true` | 请求级开关，控制是否启用RAG |
+| `use_graph_rag` | `true` | 请求级开关，控制是否启用Graph-RAG（优先于传统RAG） |
+| `project_path` | `""` | 项目路径，不同项目使用独立的向量库和图 |
+| `RAG_ENABLED` | `true` | 全局环境变量开关 |
+| `GRAPH_RAG_ENABLED` | `true` | 全局Graph-RAG开关 |
+| `RAG_EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | 嵌入模型 |
+| `SIMILARITY_THRESHOLD` | `0.5` | 相似度阈值 |
+| `GRAPH_HOPS` | `2` | 图遍历跳数 |
+
+### 4.4 RAG 使用流程
+
+1. **首次索引**：`indexer` 同时构建向量库 + 代码知识图谱
+2. **增量更新**：代码变更后重新索引，只更新变更的文件
+3. **请求时检索**：Chat API 优先使用 Graph-RAG，失败时回退到传统 RAG
+
+### 4.5 项目隔离
+
+不同 `project_path` 使用完全独立的存储：
+- 向量库：`rag_data/vector_stores/{project_name}_{hash}/code_index.faiss`
+- 知识图谱：`rag_data/vector_stores/{project_name}_{hash}/code_graph.json`
+- 元数据：`rag_data/vector_stores/{project_name}_{hash}/metadata.json`
+
+### 4.6 includes 自动提取
+
+如果请求中未提供 `includes` 字段，后端会自动从 `prompt` 中提取：
+- Python: `import xxx`, `from xxx import yyy`
+- C/C++: `#include <xxx>`
+- C#: `using xxx;`
+
 **错误示例**:
 
 ```json
@@ -256,6 +312,9 @@ Content-Type: application/json
 | model | string | 否 | 模型名称，默认使用 provider 的默认模型 | `"glm-4-flash"` |
 | provider | string | 否 | 模型提供者，默认 `zhipu` | `"zhipu"` |
 | max_tokens | integer | 否 | 最大生成token数，默认1000 | `1000` |
+| use_rag | boolean | 否 | 是否启用RAG代码检索增强，默认 `true` | `true` |
+| use_graph_rag | boolean | 否 | 是否启用Graph-RAG（优先于传统RAG），默认 `true` | `true` |
+| project_path | string | 否 | 项目绝对路径，用于RAG向量库隔离和代码检索 | `"/home/user/myproject"` |
 
 **context 对象字段**:
 
@@ -263,7 +322,7 @@ Content-Type: application/json
 |-------|------|------|------|
 | prompt | string | 是 | 光标之前的代码 |
 | suffix | string | 是 | 光标之后的代码 |
-| includes | array | 否 | include语句列表 |
+| includes | array | 否 | include/import语句列表（不传则自动从prompt提取） |
 | other_functions | array | 否 | 同文件的其他函数签名 |
 
 **请求示例**:
@@ -272,14 +331,15 @@ Content-Type: application/json
   "context": {
     "prompt": "int main() {\n    int a = 10;\n    int b = 20;\n    ",
     "suffix": "\n    return 0;\n}",
-    "includes": ["#include <iostream>"],
     "other_functions": [
       {"name": "calculate_sum", "signature": "int calculate_sum(int a, int b)"}
     ]
   },
   "model": "glm-4-flash",
   "provider": "zhipu",
-  "max_tokens": 1000
+  "max_tokens": 1000,
+  "use_rag": true,
+  "project_path": "/home/user/myproject"
 }
 ```
 
@@ -1095,6 +1155,8 @@ A: 查看错误码（error_code）：
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v3.0 | 2026-04-29 | Graph-RAG：新增代码知识图谱（NetworkX）、AST代码解析、图遍历检索、混合语义+图检索、use_graph_rag参数 |
+| v2.1 | 2026-04-26 | RAG增强：新增项目隔离向量库（project_path参数）、增量索引、相似度阈值（0.5）、Embedding缓存、includes自动提取、use_rag请求级开关 |
 | v2.0 | 2026-02-22 | 重大更新：新增 Chat 模式端点 `/api/v1/chat`，支持多模型提供者（DeepSeek、OpenAI、Anthropic、智谱AI），添加模型列表端点 `/api/v1/models`，支持模型名称验证 |
 | v1.13 | 2025-01-14 | 增强错误处理：添加错误码定义（INVALID_PARAMS、API_TIMEOUT等），优化后端prompt构造（使用更清晰的分隔符），添加完整的部署说明和FAQ |
 | v1.12 | 2025-01-14 | 修复文档问题：更新错误响应示例、删除不支持的n参数、修复前端语法错误、删除重复内容、更新API URL为beta端点 |
