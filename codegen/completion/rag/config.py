@@ -108,6 +108,10 @@ RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() == "true"
 # Embedding cache configuration
 EMBEDDING_CACHE_SIZE = int(os.getenv("RAG_EMBEDDING_CACHE_SIZE", "1000"))
 
+# Language Server configuration
+LSP_COMMAND = os.getenv("LSP_COMMAND", "clangd")
+LSP_ARGS = os.getenv("LSP_ARGS", "").split() if os.getenv("LSP_ARGS") else []
+
 # Graph-RAG configuration
 GRAPH_RAG_ENABLED = os.getenv("GRAPH_RAG_ENABLED", "true").lower() == "true"
 GRAPH_HOPS = int(os.getenv("GRAPH_HOPS", "2"))

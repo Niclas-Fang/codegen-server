@@ -7,7 +7,8 @@ A Django-based code completion API server for VSCode plugin, supporting DeepSeek
 - **FIM Mode**: Fill-in-the-middle code completion via DeepSeek API
 - **Chat Mode**: Multi-provider chat completion (DeepSeek, OpenAI, Anthropic, Zhipu)
 - **Graph-RAG Enhancement**: Hybrid graph + vector retrieval for superior code context
-- **Code Knowledge Graph**: Extracts functions, classes, imports, calls, inheritance
+- **Language Server Protocol (LSP)**: Uses clangd for precise C/C++ AST extraction
+- **Code Knowledge Graph**: Extracts functions, classes, imports, calls, inheritance via LSP
 - **Graph Traversal**: Multi-hop retrieval through call chains and dependencies
 - **Project Isolation**: Each project has its own vector store and graph
 - **Incremental Indexing**: Only update changed files, no full rebuild needed
@@ -89,6 +90,45 @@ pixi run python -m completion.rag.indexer search "def handle_request"
 pixi run python -m completion.rag.indexer clear
 ```
 
+### Language Server (LSP) Setup
+
+Graph-RAG uses a Language Server (clangd by default) for precise C/C++ AST extraction.
+
+**Install clangd:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install clangd
+
+# macOS
+brew install llvm
+
+# Or download from https://github.com/clangd/clangd/releases
+```
+
+**Generate compile_commands.json:**
+```bash
+# Using CMake
+cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .
+
+# Using Bear (build ear)
+bear -- make
+
+# Using compiledb
+pip install compiledb
+compiledb -n make
+```
+
+**Configure LSP:**
+```bash
+# Use custom LSP command
+export LSP_COMMAND="/path/to/clangd"
+export LSP_ARGS="--background-index --clang-tidy"
+
+# Or configure in your environment
+```
+
+The indexer will automatically detect `compile_commands.json` in your project root.
+
 ## Configuration
 
 ### Environment Variables
@@ -100,8 +140,11 @@ pixi run python -m completion.rag.indexer clear
 | `OPENAI_API_KEY` | For openai | - | OpenAI API key |
 | `ANTHROPIC_API_KEY` | For anthropic | - | Anthropic API key |
 | `RAG_ENABLED` | No | `true` | Enable RAG globally |
+| `GRAPH_RAG_ENABLED` | No | `true` | Enable Graph-RAG globally |
 | `RAG_EMBEDDING_MODEL` | No | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
 | `RAG_EMBEDDING_CACHE_SIZE` | No | `1000` | Embedding cache size |
+| `LSP_COMMAND` | No | `clangd` | Language Server command (e.g., clangd) |
+| `LSP_ARGS` | No | - | Additional arguments for Language Server |
 
 ### RAG Parameters (in `completion/rag/config.py`)
 
@@ -130,7 +173,8 @@ codegen/
 │       ├── retriever.py     # Traditional vector retrieval
 │       ├── graph_store.py   # NetworkX graph + vector hybrid
 │       ├── graph_retriever.py # Graph traversal retrieval
-│       ├── code_parser.py   # AST + regex code parser
+│       ├── code_parser.py   # LSP + regex code parser
+│       ├── lsp_client.py    # Language Server Protocol client
 │       ├── indexer.py       # CLI tool for indexing
 │       └── config.py        # RAG configuration
 ├── manage.py

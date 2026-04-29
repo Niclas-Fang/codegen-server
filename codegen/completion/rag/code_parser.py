@@ -1,629 +1,408 @@
 """
 Code Parser for Graph-RAG
-Extracts AST nodes and relationships from source code.
-Supports Python (ast), with regex fallback for other languages.
+Uses Language Server Protocol (LSP) for precise AST extraction.
+Falls back to regex-based parsing when LSP is unavailable.
+Optimized for C/C++ with clangd.
 """
 
-import ast
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
+import re
 
 
 @dataclass
 class CodeEntity:
     """Represents a code entity (function, class, variable)."""
     name: str
-    entity_type: str  # 'function', 'class', 'method', 'variable', 'import'
+    entity_type: str
     source_file: str
     line_start: int = 0
     line_end: int = 0
     content: str = ""
     signature: str = ""
-    parent: Optional[str] = None  # Parent class/function name
+    parent: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class CodeRelation:
     """Represents a relationship between two code entities."""
-    source: str  # Source entity name
-    target: str  # Target entity name
-    relation_type: str  # 'calls', 'imports', 'inherits', 'contains', 'references'
+    source: str
+    target: str
+    relation_type: str
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-class PythonCodeParser:
-    """Parse Python code using the ast module."""
-    
-    def __init__(self, file_path: Path, content: str):
-        self.file_path = str(file_path)
-        self.content = content
-        self.entities: List[CodeEntity] = []
-        self.relations: List[CodeRelation] = []
-        self._line_offsets = self._compute_line_offsets()
-    
-    def _compute_line_offsets(self) -> List[int]:
-        offsets = [0]
-        for i, char in enumerate(self.content):
-            if char == "\n":
-                offsets.append(i + 1)
-        return offsets
-    
-    def _get_line_number(self, pos: int) -> int:
-        for i, offset in enumerate(self._line_offsets):
-            if pos < offset:
-                return i
-        return len(self._line_offsets)
-    
-    def _get_source_segment(self, node: ast.AST) -> str:
-        try:
-            start = self._line_offsets[node.lineno - 1] + node.col_offset
-            end = self._line_offsets[node.end_lineno - 1] + node.end_col_offset
-            return self.content[start:end]
-        except (AttributeError, IndexError):
-            return ""
-    
-    def parse(self) -> tuple[List[CodeEntity], List[CodeRelation]]:
-        try:
-            tree = ast.parse(self.content)
-        except SyntaxError:
-            return self._fallback_parse()
-        
-        self._visit_module(tree)
-        return self.entities, self.relations
-    
-    def _visit_module(self, node: ast.Module):
-        # Add file entity
-        file_entity = CodeEntity(
-            name=Path(self.file_path).name,
-            entity_type="file",
-            source_file=self.file_path,
-            line_start=1,
-            line_end=len(self.content.splitlines()),
-            content=self.content,
-        )
-        self.entities.append(file_entity)
-        
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                self._visit_function(child)
-            elif isinstance(child, ast.ClassDef):
-                self._visit_class(child)
-            elif isinstance(child, ast.Import):
-                self._visit_import(child)
-            elif isinstance(child, ast.ImportFrom):
-                self._visit_import_from(child)
-        
-        # Second pass: find call relationships
-        self._extract_calls(node)
-    
-    def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef, parent: Optional[str] = None):
-        name = node.name
-        content = self._get_source_segment(node)
-        
-        # Build signature
-        args_str = self._format_args(node.args)
-        returns = ""
-        if node.returns:
-            returns = f" -> {ast.unparse(node.returns)}"
-        signature = f"def {name}({args_str}){returns}:"
-        
-        entity = CodeEntity(
-            name=name,
-            entity_type="method" if parent else "function",
-            source_file=self.file_path,
-            line_start=node.lineno,
-            line_end=node.end_lineno,
-            content=content,
-            signature=signature,
-            parent=parent,
-        )
-        self.entities.append(entity)
-        
-        # File contains function
-        self.relations.append(CodeRelation(
-            source=Path(self.file_path).name,
-            target=name,
-            relation_type="contains",
-        ))
-        
-        # Visit nested functions and classes
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                self._visit_function(child, parent=name)
-            elif isinstance(child, ast.ClassDef):
-                self._visit_class(child, parent=name)
-    
-    def _visit_class(self, node: ast.ClassDef, parent: Optional[str] = None):
-        name = node.name
-        content = self._get_source_segment(node)
-        
-        # Build inheritance signature
-        bases = [ast.unparse(base) for base in node.bases]
-        bases_str = f"({', '.join(bases)})" if bases else ""
-        signature = f"class {name}{bases_str}:"
-        
-        entity = CodeEntity(
-            name=name,
-            entity_type="class",
-            source_file=self.file_path,
-            line_start=node.lineno,
-            line_end=node.end_lineno,
-            content=content,
-            signature=signature,
-            parent=parent,
-        )
-        self.entities.append(entity)
-        
-        # File contains class
-        container = parent if parent else Path(self.file_path).name
-        self.relations.append(CodeRelation(
-            source=container,
-            target=name,
-            relation_type="contains",
-        ))
-        
-        # Inheritance relationships
-        for base in node.bases:
-            base_name = ast.unparse(base)
-            self.relations.append(CodeRelation(
-                source=name,
-                target=base_name,
-                relation_type="inherits",
-            ))
-        
-        # Visit methods
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                self._visit_function(child, parent=name)
-            elif isinstance(child, ast.ClassDef):
-                self._visit_class(child, parent=name)
-    
-    def _visit_import(self, node: ast.Import):
-        for alias in node.names:
-            name = alias.asname if alias.asname else alias.name
-            entity = CodeEntity(
-                name=name,
-                entity_type="import",
-                source_file=self.file_path,
-                line_start=node.lineno,
-                line_end=node.end_lineno,
-                signature=f"import {alias.name}",
-            )
-            self.entities.append(entity)
-            
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="imports",
-            ))
-    
-    def _visit_import_from(self, node: ast.ImportFrom):
-        module = node.module or ""
-        for alias in node.names:
-            name = alias.asname if alias.asname else alias.name
-            full_name = f"{module}.{alias.name}" if module else alias.name
-            entity = CodeEntity(
-                name=name,
-                entity_type="import",
-                source_file=self.file_path,
-                line_start=node.lineno,
-                line_end=node.end_lineno,
-                signature=f"from {module} import {alias.name}",
-            )
-            self.entities.append(entity)
-            
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=full_name,
-                relation_type="imports",
-            ))
-    
-    def _extract_calls(self, tree: ast.AST):
-        """Extract function call relationships."""
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                func = node.func
-                if isinstance(func, ast.Name):
-                    call_name = func.id
-                    # Find the containing function/class
-                    container = self._find_container(node)
-                    if container:
-                        self.relations.append(CodeRelation(
-                            source=container,
-                            target=call_name,
-                            relation_type="calls",
-                        ))
-                elif isinstance(func, ast.Attribute):
-                    # method call like obj.method()
-                    call_name = ast.unparse(func)
-                    container = self._find_container(node)
-                    if container:
-                        self.relations.append(CodeRelation(
-                            source=container,
-                            target=call_name,
-                            relation_type="calls",
-                        ))
-    
-    def _find_container(self, node: ast.AST) -> Optional[str]:
-        """Find the containing function or class name."""
-        # This is a simplified version - in practice we'd track parent nodes
-        return None
-    
-    def _format_args(self, args: ast.arguments) -> str:
-        """Format function arguments."""
-        parts = []
-        
-        # Positional args
-        all_args = args.posonlyargs + args.args
-        defaults_start = len(all_args) - len(args.defaults)
-        
-        for i, arg in enumerate(all_args):
-            arg_str = arg.arg
-            if arg.annotation:
-                arg_str += f": {ast.unparse(arg.annotation)}"
-            if i >= defaults_start:
-                default = args.defaults[i - defaults_start]
-                arg_str += f"={ast.unparse(default)}"
-            parts.append(arg_str)
-        
-        # *args
-        if args.vararg:
-            parts.append(f"*{args.vararg.arg}")
-        
-        # **kwargs
-        if args.kwarg:
-            parts.append(f"**{args.kwarg.arg}")
-        
-        return ", ".join(parts)
-    
-    def _fallback_parse(self) -> tuple[List[CodeEntity], List[CodeRelation]]:
-        """Fallback regex-based parser for files with syntax errors."""
-        return RegexCodeParser(self.file_path, self.content).parse()
+@dataclass
+class ParseResult:
+    """Result of parsing a code file."""
+    entities: List[CodeEntity]
+    relations: List[CodeRelation]
+    errors: List[str] = field(default_factory=list)
 
 
-class RegexCodeParser:
-    """Regex-based parser for non-Python languages or fallback."""
+def parse_file_with_lsp(
+    file_path: Path,
+    lsp_client: Optional[Any] = None,
+) -> ParseResult:
+    """
+    Parse a code file using LSP (preferred) or regex fallback.
     
-    def __init__(self, file_path: str, content: str):
-        self.file_path = file_path
-        self.content = content
-        self.entities: List[CodeEntity] = []
-        self.relations: List[CodeRelation] = []
+    Args:
+        file_path: Path to the code file
+        lsp_client: Optional LSP client instance
     
-    def parse(self) -> tuple[List[CodeEntity], List[CodeRelation]]:
-        ext = Path(self.file_path).suffix.lower()
-        
-        # Add file entity
-        self.entities.append(CodeEntity(
-            name=Path(self.file_path).name,
-            entity_type="file",
-            source_file=self.file_path,
-            content=self.content,
-        ))
-        
-        if ext == ".py":
-            self._parse_python_regex()
-        elif ext in (".js", ".ts", ".jsx", ".tsx"):
-            self._parse_javascript()
-        elif ext in (".java", ".cs"):
-            self._parse_java_like()
-        elif ext in (".cpp", ".c", ".h", ".hpp"):
-            self._parse_cpp()
-        elif ext == ".go":
-            self._parse_go()
-        elif ext == ".rs":
-            self._parse_rust()
-        else:
-            # Generic: just chunk the file
+    Returns:
+        ParseResult with entities and relations
+    """
+    # Try LSP first if available
+    if lsp_client is not None and getattr(lsp_client, '_initialized', False):
+        try:
+            return _parse_with_lsp(file_path, lsp_client)
+        except Exception:
             pass
-        
-        return self.entities, self.relations
     
-    def _parse_python_regex(self):
-        # Function definitions
-        func_pattern = re.compile(r'^(async\s+)?def\s+(\w+)\s*\(([^)]*)\)', re.MULTILINE)
-        for match in func_pattern.finditer(self.content):
-            name = match.group(2)
-            signature = match.group(0)
-            line_num = self.content[:match.start()].count("\n") + 1
-            
-            self.entities.append(CodeEntity(
-                name=name,
-                entity_type="function",
-                source_file=self.file_path,
-                line_start=line_num,
-                signature=signature,
-            ))
-            
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="contains",
-            ))
+    # Fallback to regex-based parsing
+    return _parse_with_regex(file_path)
+
+
+def _parse_with_lsp(file_path: Path, lsp_client: Any) -> ParseResult:
+    """Parse file using Language Server Protocol."""
+    entities = []
+    relations = []
+    errors = []
+    
+    # Open document in LSP
+    lsp_client.open_document(str(file_path))
+    
+    try:
+        # Get all symbols in the document
+        symbols = lsp_client.get_document_symbols(str(file_path))
         
-        # Class definitions
-        class_pattern = re.compile(r'^class\s+(\w+)\s*(?:\(([^)]*)\))?:', re.MULTILINE)
-        for match in class_pattern.finditer(self.content):
-            name = match.group(1)
-            bases = match.group(2) or ""
-            line_num = self.content[:match.start()].count("\n") + 1
+        # Convert LSP symbols to our entity format
+        _convert_symbols(symbols, str(file_path), entities, relations)
+        
+        # Extract call relationships by analyzing function bodies
+        _extract_call_relations_lsp(symbols, str(file_path), lsp_client, entities, relations)
+        
+    except Exception as e:
+        errors.append(f"LSP parse error for {file_path}: {e}")
+    finally:
+        lsp_client.close_document(str(file_path))
+    
+    return ParseResult(entities=entities, relations=relations, errors=errors)
+
+
+def _convert_symbols(
+    symbols: List[Any],
+    file_path: str,
+    entities: List[CodeEntity],
+    relations: List[CodeRelation],
+    parent_name: Optional[str] = None,
+):
+    """Recursively convert LSP symbols to our entity format."""
+    file_name = Path(file_path).name
+    
+    for symbol in symbols:
+        entity_type = _map_lsp_kind_to_entity(symbol.kind)
+        
+        # Read symbol content from file
+        content = _extract_symbol_content(file_path, symbol)
+        
+        entity = CodeEntity(
+            name=symbol.name,
+            entity_type=entity_type,
+            source_file=file_path,
+            line_start=symbol.range_start.get("line", 0) + 1,
+            line_end=symbol.range_end.get("line", 0) + 1,
+            content=content,
+            signature=symbol.detail or f"{symbol.kind} {symbol.name}",
+            parent=parent_name,
+        )
+        entities.append(entity)
+        
+        # Create contains relation
+        container = parent_name if parent_name else file_name
+        relations.append(CodeRelation(
+            source=container,
+            target=symbol.name,
+            relation_type="contains",
+        ))
+        
+        # Handle inheritance for classes
+        if entity_type == "class" and symbol.detail:
+            # Parse inheritance from detail like "class Foo : public Bar"
+            _parse_inheritance(symbol.detail, symbol.name, relations)
+        
+        # Recursively process children
+        if symbol.children:
+            _convert_symbols(
+                symbol.children,
+                file_path,
+                entities,
+                relations,
+                parent_name=symbol.name,
+            )
+
+
+def _extract_call_relations_lsp(
+    symbols: List[Any],
+    file_path: str,
+    lsp_client: Any,
+    entities: List[CodeEntity],
+    relations: List[CodeRelation],
+):
+    """Extract function call relationships using LSP references."""
+    for symbol in symbols:
+        if symbol.kind in ("function", "method"):
+            # Get references to this function
+            refs = lsp_client.get_references(
+                file_path,
+                symbol.selection_start.get("line", 0),
+                symbol.selection_start.get("character", 0),
+            )
             
-            self.entities.append(CodeEntity(
-                name=name,
-                entity_type="class",
-                source_file=self.file_path,
-                line_start=line_num,
-                signature=match.group(0),
-            ))
-            
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="contains",
-            ))
-            
-            # Inheritance
-            if bases:
-                for base in [b.strip() for b in bases.split(",")]:
-                    self.relations.append(CodeRelation(
-                        source=name,
-                        target=base,
-                        relation_type="inherits",
+            for ref in refs:
+                # Find which function contains this reference
+                caller = _find_containing_function(
+                    ref.uri.replace("file://", ""),
+                    ref.start_line,
+                    entities,
+                )
+                if caller and caller != symbol.name:
+                    relations.append(CodeRelation(
+                        source=caller,
+                        target=symbol.name,
+                        relation_type="calls",
                     ))
         
-        # Imports
-        import_pattern = re.compile(r'^(?:from\s+(\S+)\s+)?import\s+(.+)$', re.MULTILINE)
-        for match in import_pattern.finditer(self.content):
-            module = match.group(1) or ""
-            imports = match.group(2)
-            line_num = self.content[:match.start()].count("\n") + 1
-            
-            for imp in [i.strip().split()[0] for i in imports.split(",")]:
-                full_name = f"{module}.{imp}" if module else imp
-                self.relations.append(CodeRelation(
-                    source=Path(self.file_path).name,
-                    target=full_name,
-                    relation_type="imports",
-                ))
-    
-    def _parse_javascript(self):
-        # Functions
-        func_pattern = re.compile(
-            r'(?:^|\n)\s*(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)',
-            re.MULTILINE
-        )
-        for match in func_pattern.finditer(self.content):
-            name = match.group(1)
-            line_num = self.content[:match.start()].count("\n") + 1
-            
-            self.entities.append(CodeEntity(
-                name=name,
-                entity_type="function",
-                source_file=self.file_path,
-                line_start=line_num,
-                signature=match.group(0).strip(),
-            ))
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="contains",
-            ))
-        
-        # Arrow functions with const
-        arrow_pattern = re.compile(
-            r'(?:^|\n)\s*const\s+(\w+)\s*=\s*(?:async\s+)?\(([^)]*)\)\s*=>',
-            re.MULTILINE
-        )
-        for match in arrow_pattern.finditer(self.content):
-            name = match.group(1)
-            line_num = self.content[:match.start()].count("\n") + 1
-            
-            self.entities.append(CodeEntity(
-                name=name,
-                entity_type="function",
-                source_file=self.file_path,
-                line_start=line_num,
-                signature=match.group(0).strip(),
-            ))
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="contains",
-            ))
-        
-        # Classes
-        class_pattern = re.compile(r'(?:^|\n)\s*class\s+(\w+)(?:\s+extends\s+(\w+))?\s*\{', re.MULTILINE)
-        for match in class_pattern.finditer(self.content):
-            name = match.group(1)
-            parent = match.group(2)
-            line_num = self.content[:match.start()].count("\n") + 1
-            
-            self.entities.append(CodeEntity(
-                name=name,
-                entity_type="class",
-                source_file=self.file_path,
-                line_start=line_num,
-                signature=match.group(0).strip(),
-            ))
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="contains",
-            ))
-            
-            if parent:
-                self.relations.append(CodeRelation(
-                    source=name,
-                    target=parent,
-                    relation_type="inherits",
-                ))
-        
-        # Imports
-        import_pattern = re.compile(r"import\s+.*?\s+from\s+['\"]([^'\"]+)['\"]", re.MULTILINE)
-        for match in import_pattern.finditer(self.content):
-            module = match.group(1)
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=module,
-                relation_type="imports",
-            ))
-    
-    def _parse_java_like(self):
-        # Methods
-        method_pattern = re.compile(
-            r'(?:^|\n)\s*(?:public|private|protected)?\s*(?:static\s+)?(?:final\s+)?(?:\w+\s+)+(\w+)\s*\(([^)]*)\)\s*\{',
-            re.MULTILINE
-        )
-        for match in method_pattern.finditer(self.content):
-            name = match.group(1)
-            if name in ("if", "while", "for", "switch", "catch"):
-                continue
-            line_num = self.content[:match.start()].count("\n") + 1
-            
-            self.entities.append(CodeEntity(
-                name=name,
-                entity_type="method",
-                source_file=self.file_path,
-                line_start=line_num,
-            ))
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="contains",
-            ))
-        
-        # Classes
-        class_pattern = re.compile(r'(?:^|\n)\s*(?:public\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?', re.MULTILINE)
-        for match in class_pattern.finditer(self.content):
-            name = match.group(1)
-            parent = match.group(2)
-            line_num = self.content[:match.start()].count("\n") + 1
-            
-            self.entities.append(CodeEntity(
-                name=name,
-                entity_type="class",
-                source_file=self.file_path,
-                line_start=line_num,
-            ))
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="contains",
-            ))
-            
-            if parent:
-                self.relations.append(CodeRelation(
-                    source=name,
-                    target=parent,
-                    relation_type="inherits",
-                ))
-    
-    def _parse_cpp(self):
-        # Functions
-        func_pattern = re.compile(
-            r'(?:^|\n)\s*(?:\w+\s+)+?(\w+)\s*\(([^)]*)\)\s*(?:const\s+)?(?:noexcept\s+)?\{',
-            re.MULTILINE
-        )
-        for match in func_pattern.finditer(self.content):
-            name = match.group(1)
-            if name in ("if", "while", "for", "switch", "catch"):
-                continue
-            line_num = self.content[:match.start()].count("\n") + 1
-            
-            self.entities.append(CodeEntity(
-                name=name,
-                entity_type="function",
-                source_file=self.file_path,
-                line_start=line_num,
-            ))
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="contains",
-            ))
-        
-        # Includes
-        include_pattern = re.compile(r'#include\s+[<"]([^>"]+)[>"]')
-        for match in include_pattern.finditer(self.content):
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=match.group(1),
-                relation_type="imports",
-            ))
-    
-    def _parse_go(self):
-        # Functions
-        func_pattern = re.compile(r'(?:^|\n)func\s+(?:\([^)]+\)\s+)?(\w+)\s*\(', re.MULTILINE)
-        for match in func_pattern.finditer(self.content):
-            name = match.group(1)
-            line_num = self.content[:match.start()].count("\n") + 1
-            
-            self.entities.append(CodeEntity(
-                name=name,
-                entity_type="function",
-                source_file=self.file_path,
-                line_start=line_num,
-            ))
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="contains",
-            ))
-    
-    def _parse_rust(self):
-        # Functions
-        func_pattern = re.compile(r'(?:^|\n)\s*fn\s+(\w+)\s*(?:<[^>]+>)?\s*\(', re.MULTILINE)
-        for match in func_pattern.finditer(self.content):
-            name = match.group(1)
-            line_num = self.content[:match.start()].count("\n") + 1
-            
-            self.entities.append(CodeEntity(
-                name=name,
-                entity_type="function",
-                source_file=self.file_path,
-                line_start=line_num,
-            ))
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="contains",
-            ))
-        
-        # Structs
-        struct_pattern = re.compile(r'(?:^|\n)\s*struct\s+(\w+)', re.MULTILINE)
-        for match in struct_pattern.finditer(self.content):
-            name = match.group(1)
-            line_num = self.content[:match.start()].count("\n") + 1
-            
-            self.entities.append(CodeEntity(
-                name=name,
-                entity_type="class",
-                source_file=self.file_path,
-                line_start=line_num,
-            ))
-            self.relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="contains",
-            ))
+        # Recurse into children
+        if symbol.children:
+            _extract_call_relations_lsp(
+                symbol.children, file_path, lsp_client, entities, relations
+            )
 
 
-def parse_file(file_path: Path) -> tuple[List[CodeEntity], List[CodeRelation]]:
-    """Parse a code file and extract entities and relations."""
+def _find_containing_function(
+    file_path: str,
+    line: int,
+    entities: List[CodeEntity],
+) -> Optional[str]:
+    """Find the function that contains a given line."""
+    candidates = [
+        e for e in entities
+        if e.source_file == file_path
+        and e.entity_type in ("function", "method")
+        and e.line_start <= line + 1 <= e.line_end
+    ]
+    
+    if candidates:
+        # Return the most specific (smallest range) function
+        candidates.sort(key=lambda e: e.line_end - e.line_start)
+        return candidates[0].name
+    
+    return None
+
+
+def _map_lsp_kind_to_entity(lsp_kind: str) -> str:
+    """Map LSP symbol kind to our entity type."""
+    kind_map = {
+        "file": "file",
+        "module": "module",
+        "namespace": "namespace",
+        "package": "package",
+        "class": "class",
+        "method": "method",
+        "property": "property",
+        "field": "field",
+        "constructor": "constructor",
+        "enum": "enum",
+        "interface": "interface",
+        "function": "function",
+        "variable": "variable",
+        "constant": "constant",
+        "string": "string",
+        "number": "number",
+        "boolean": "boolean",
+        "array": "array",
+        "object": "object",
+        "key": "key",
+        "null": "null",
+        "enum_member": "enum_member",
+        "struct": "class",
+        "event": "event",
+        "operator": "operator",
+        "type_parameter": "type_parameter",
+    }
+    return kind_map.get(lsp_kind, "unknown")
+
+
+def _extract_symbol_content(file_path: str, symbol: Any) -> str:
+    """Extract the source code content of a symbol."""
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()
+        
+        start_line = symbol.range_start.get("line", 0)
+        end_line = symbol.range_end.get("line", 0)
+        
+        # Extract lines (0-indexed)
+        content_lines = lines[start_line:end_line + 1]
+        return "".join(content_lines)
+    except Exception:
+        return ""
+
+
+def _parse_inheritance(detail: str, class_name: str, relations: List[CodeRelation]):
+    """Parse inheritance relationships from class detail string."""
+    # Pattern: "class Foo : public Bar, private Baz"
+    if ":" in detail:
+        inheritance_part = detail.split(":", 1)[1]
+        for base in inheritance_part.split(","):
+            base = base.strip()
+            # Remove access specifiers
+            for access in ("public ", "private ", "protected ", "virtual "):
+                base = base.replace(access, "")
+            base = base.strip()
+            if base and base != class_name:
+                relations.append(CodeRelation(
+                    source=class_name,
+                    target=base,
+                    relation_type="inherits",
+                ))
+
+
+def _parse_with_regex(file_path: Path) -> ParseResult:
+    """Fallback regex-based C/C++ parser."""
     try:
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read()
-    except Exception:
-        return [], []
+    except Exception as e:
+        return ParseResult(entities=[], relations=[], errors=[str(e)])
     
-    ext = file_path.suffix.lower()
+    entities = []
+    relations = []
     
-    if ext == ".py":
-        parser = PythonCodeParser(file_path, content)
-    else:
-        parser = RegexCodeParser(str(file_path), content)
+    # File entity
+    entities.append(CodeEntity(
+        name=file_path.name,
+        entity_type="file",
+        source_file=str(file_path),
+        content=content,
+    ))
     
-    return parser.parse()
+    # Functions
+    func_pattern = re.compile(
+        r'(?:^|\n)\s*(?:\w+\s+)+?(\w+)\s*\(([^)]*)\)\s*(?:const\s+)?(?:noexcept\s+)?\{',
+        re.MULTILINE
+    )
+    for match in func_pattern.finditer(content):
+        name = match.group(1)
+        if name in ("if", "while", "for", "switch", "catch", "return"):
+            continue
+        line_num = content[:match.start()].count("\n") + 1
+        
+        entities.append(CodeEntity(
+            name=name,
+            entity_type="function",
+            source_file=str(file_path),
+            line_start=line_num,
+            signature=match.group(0).strip()[:100],
+        ))
+        relations.append(CodeRelation(
+            source=file_path.name,
+            target=name,
+            relation_type="contains",
+        ))
+    
+    # Classes and structs
+    class_pattern = re.compile(
+        r'(?:^|\n)\s*(?:class|struct)\s+(\w+)(?:\s*:\s*(?:public|private|protected)\s+(\w+))?',
+        re.MULTILINE
+    )
+    for match in class_pattern.finditer(content):
+        name = match.group(1)
+        parent = match.group(2)
+        line_num = content[:match.start()].count("\n") + 1
+        
+        entities.append(CodeEntity(
+            name=name,
+            entity_type="class",
+            source_file=str(file_path),
+            line_start=line_num,
+            signature=match.group(0).strip(),
+        ))
+        relations.append(CodeRelation(
+            source=file_path.name,
+            target=name,
+            relation_type="contains",
+        ))
+        
+        if parent:
+            relations.append(CodeRelation(
+                source=name,
+                target=parent,
+                relation_type="inherits",
+            ))
+    
+    # Includes
+    include_pattern = re.compile(r'#include\s+[<"]([^>"]+)[>"]')
+    for match in include_pattern.finditer(content):
+        relations.append(CodeRelation(
+            source=file_path.name,
+            target=match.group(1),
+            relation_type="imports",
+        ))
+    
+    # Namespaces
+    namespace_pattern = re.compile(
+        r'(?:^|\n)\s*namespace\s+(\w+)\s*\{',
+        re.MULTILINE
+    )
+    for match in namespace_pattern.finditer(content):
+        name = match.group(1)
+        line_num = content[:match.start()].count("\n") + 1
+        
+        entities.append(CodeEntity(
+            name=name,
+            entity_type="namespace",
+            source_file=str(file_path),
+            line_start=line_num,
+            signature=f"namespace {name}",
+        ))
+        relations.append(CodeRelation(
+            source=file_path.name,
+            target=name,
+            relation_type="contains",
+        ))
+    
+    return ParseResult(entities=entities, relations=relations)
+
+
+def parse_project(
+    directory: Path,
+    lsp_client: Optional[Any] = None,
+    extensions: Tuple[str, ...] = (".cpp", ".c", ".h", ".hpp", ".cc", ".cxx"),
+) -> Tuple[List[CodeEntity], List[CodeRelation]]:
+    """
+    Parse all code files in a directory.
+    
+    Args:
+        directory: Root directory to scan
+        lsp_client: Optional LSP client for precise parsing
+        extensions: File extensions to parse (default: C/C++ extensions)
+    
+    Returns:
+        Combined entities and relations from all files
+    """
+    all_entities = []
+    all_relations = []
+    
+    for file_path in directory.rglob("*"):
+        if file_path.is_file() and file_path.suffix.lower() in extensions:
+            result = parse_file_with_lsp(file_path, lsp_client)
+            all_entities.extend(result.entities)
+            all_relations.extend(result.relations)
+    
+    return all_entities, all_relations

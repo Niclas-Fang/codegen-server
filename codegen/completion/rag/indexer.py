@@ -21,8 +21,8 @@ from completion.rag.chunker import CodeChunker
 from completion.rag.vector_store import get_vector_store, clear_store_cache
 from completion.rag.retriever import retrieve_relevant_code, format_retrieval_context
 from completion.rag.graph_store import get_graph_store, clear_graph_store_cache
-from completion.rag.code_parser import parse_file
-from completion.rag.config import get_vector_store_dir
+from completion.rag.code_parser import parse_file_with_lsp
+from completion.rag.config import get_vector_store_dir, LSP_COMMAND
 
 
 def get_file_mtime(path: Path) -> float:
@@ -156,26 +156,52 @@ def build_index(directory: Path, project_path: str = "", verbose: bool = True, i
         if verbose:
             print(f"Indexed {total_indexed}/{len(all_chunks)} chunks...")
 
-    # Build graph
+    # Build graph using LSP if available
     if verbose:
         print("Building code knowledge graph...")
+    
+    lsp_client = None
+    try:
+        from completion.rag.lsp_client import LSPClient
+        lsp_client = LSPClient(
+            command=LSP_COMMAND,
+            workspace_path=str(directory),
+        )
+        if lsp_client.start():
+            if verbose:
+                print(f"  Connected to Language Server: {LSP_COMMAND}")
+        else:
+            if verbose:
+                print(f"  Warning: Could not start Language Server, using fallback parser")
+            lsp_client = None
+    except Exception as e:
+        if verbose:
+            print(f"  Warning: LSP unavailable ({e}), using fallback parser")
+        lsp_client = None
     
     indexed_files = set(c.source for c in all_chunks)
     total_entities = 0
     total_relations = 0
     
-    for file_path_str in indexed_files:
-        file_path = Path(file_path_str)
-        if not file_path.is_absolute():
-            file_path = directory / file_path
-        
-        entities, relations = parse_file(file_path)
-        if entities:
-            graph_store.add_entities(entities)
-            total_entities += len(entities)
-        if relations:
-            graph_store.add_relations(relations)
-            total_relations += len(relations)
+    try:
+        for file_path_str in indexed_files:
+            file_path = Path(file_path_str)
+            if not file_path.is_absolute():
+                file_path = directory / file_path
+            
+            result = parse_file_with_lsp(file_path, lsp_client)
+            if result.entities:
+                graph_store.add_entities(result.entities)
+                total_entities += len(result.entities)
+            if result.relations:
+                graph_store.add_relations(result.relations)
+                total_relations += len(result.relations)
+            if result.errors and verbose:
+                for error in result.errors:
+                    print(f"  Parse error: {error}")
+    finally:
+        if lsp_client:
+            lsp_client.stop()
     
     graph_store._save_graph()
     
