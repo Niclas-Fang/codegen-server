@@ -32,11 +32,14 @@ export DEEPSEEK_API_KEY="your-api-key"
 # Initialize database
 pixi run python manage.py migrate
 
-# Start server
-pixi run python manage.py runserver
+# Start dev server
+pixi run dev
+
+# Start production server
+pixi run serve
 
 # Run tests (in another terminal)
-pixi run python test_api.py
+pixi run test
 ```
 
 ## API Endpoints
@@ -236,11 +239,8 @@ curl http://localhost:8000/api/v1/health
 ### Using Gunicorn
 
 ```bash
-pixi add --pypi gunicorn
-pixi run gunicorn config.wsgi:application \
-  --bind 0.0.0.0:8000 \
-  --workers 4 \
-  --timeout 120
+# Production server with 4 workers
+pixi run serve
 ```
 
 ## Troubleshooting
@@ -255,7 +255,7 @@ echo $DEEPSEEK_API_KEY
 netstat -tlnp | grep :8000
 
 # Check Django configuration
-pixi run python manage.py check
+DJANGO_DEBUG=true pixi run python manage.py check
 ```
 
 ### API Returns 500 Error

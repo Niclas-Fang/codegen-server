@@ -32,11 +32,14 @@ export DEEPSEEK_API_KEY="your-api-key"
 # 初始化数据库
 pixi run python manage.py migrate
 
-# 启动服务
-pixi run python manage.py runserver
+# 启动开发服务器
+pixi run dev
+
+# 启动生产服务器
+pixi run serve
 
 # 运行测试（另一个终端）
-pixi run python test_api.py
+pixi run test
 ```
 
 ## API 接口
@@ -213,11 +216,8 @@ RAG_ENABLED=true
 ### 使用 Gunicorn
 
 ```bash
-pixi add --pypi gunicorn
-pixi run gunicorn config.wsgi:application \
-  --bind 0.0.0.0:8000 \
-  --workers 4 \
-  --timeout 120
+# 生产服务器（4 worker）
+pixi run serve
 ```
 
 ## 常见问题
