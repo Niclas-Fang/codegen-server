@@ -218,11 +218,13 @@ Graph-RAG（Graph-based Retrieval-Augmented Generation）是传统 RAG 的增强
 | `RAG_EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | 嵌入模型 |
 | `SIMILARITY_THRESHOLD` | `0.5` | 相似度阈值 |
 | `GRAPH_HOPS` | `2` | 图遍历跳数 |
+| `LSP_COMMAND` | `clangd` | LSP 命令，用于代码解析 |
+| `LSP_FALLBACK_COMMANDS` | `clangd,ccls` | LSP 回退命令列表，逗号分隔，按顺序尝试启动 |
 
 ### 4.4 RAG 使用流程
 
-1. **首次索引**：`indexer` 同时构建向量库 + 代码知识图谱
-2. **增量更新**：代码变更后重新索引，只更新变更的文件
+1. **首次索引**：`indexer` 同时构建向量库 + 代码知识图谱；自动检测可用的 LSP（clangd → ccls 按序回退）
+2. **增量更新**：代码变更后重新索引，基于文件修改时间（mtime）自动检测变更文件
 3. **请求时检索**：Chat API 优先使用 Graph-RAG，失败时回退到传统 RAG
 
 ### 4.5 项目隔离
@@ -1155,6 +1157,7 @@ A: 查看错误码（error_code）：
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v3.1 | 2026-05-01 | LSP 回退机制：自动检测 clangd/ccls，支持 LSP_FALLBACK_COMMANDS 配置；增量索引基于 mtime 精确检测；代码解析性能优化 |
 | v3.0 | 2026-04-29 | Graph-RAG：新增代码知识图谱（NetworkX）、AST代码解析、图遍历检索、混合语义+图检索、use_graph_rag参数 |
 | v2.1 | 2026-04-26 | RAG增强：新增项目隔离向量库（project_path参数）、增量索引、相似度阈值（0.5）、Embedding缓存、includes自动提取、use_rag请求级开关 |
 | v2.0 | 2026-02-22 | 重大更新：新增 Chat 模式端点 `/api/v1/chat`，支持多模型提供者（DeepSeek、OpenAI、Anthropic、智谱AI），添加模型列表端点 `/api/v1/models`，支持模型名称验证 |

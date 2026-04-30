@@ -22,9 +22,9 @@ pixi run python test_api.py test_name      # Single test
 # RAG indexing
 pixi run python -m completion.rag.indexer index /path/to/project
 pixi run python -m completion.rag.indexer index /path/to/project --full
-pixi run python -m completion.rag.indexer stats
+pixi run python -m completion.rag.indexer stats --project-path /path/to/project
 pixi run python -m completion.rag.indexer search "<query>"
-pixi run python -m completion.rag.indexer clear
+pixi run python -m completion.rag.indexer clear --project-path /path/to/project
 ```
 
 All commands run from the `codegen/` directory.
@@ -57,8 +57,9 @@ GET  /api/v1/models     → views.models()     → model_providers.get_all_model
 Two-tier retrieval: traditional vector-only RAG and Graph-RAG.
 
 - **Vector path**: `chunker.py` → `vector_store.py` (FAISS + sentence-transformers) → `retriever.py`
-- **Graph path**: `code_parser.py` (LSP/regex) + `lsp_client.py` (clangd JSON-RPC) → `graph_store.py` (NetworkX) → `graph_retriever.py`
+- **Graph path**: `code_parser.py` (LSP/regex) + `lsp_client.py` (clangd/ccls JSON-RPC) → `graph_store.py` (NetworkX) → `graph_retriever.py`
 - **CLI**: `indexer.py` — incremental or full rebuild, stats, search, clear
+- **LSP fallback**: tries commands from `LSP_FALLBACK_COMMANDS` (default: clangd,ccls) in order; uses regex parser if none available
 
 Graph-RAG strategy: semantic search for seed nodes → BFS graph traversal (calls, inherits, imports, contains) → ranked fusion with relation-aware score decay.
 
@@ -74,6 +75,7 @@ Each project gets its own FAISS index + graph, identified by an MD5 hash of the 
 - **Test suite**: `test_api.py` (~1050 lines, custom TestRunner, requires running server). `completion/tests.py` is empty.
 - **Hardcoded limits** in `services.py`: MAX_TOTAL_LENGTH=8000, MAX_INCLUDES=10, MAX_FUNCTIONS=5, MAX_PROMPT_LENGTH=4000, DEFAULT_TIMEOUT=10s.
 - **`rag_data/`** lives at `/home/niclas/codegen-server/rag_data/` (adjacent to `codegen/`).
+- **LSP fallback**: Set `LSP_FALLBACK_COMMANDS` env var (comma-separated) to customize LSP fallback order. Default: `clangd,ccls`. Indexer tries each in order and falls back to regex parser if none available.
 
 ### Prompt Augmentation Points
 

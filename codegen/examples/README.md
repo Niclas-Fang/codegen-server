@@ -69,6 +69,8 @@ cd ..
 python3 -m completion.rag.indexer index examples/demo_project --project-path demo_project
 ```
 
+索引时会自动检测可用的 LSP（clangd → ccls 回退），无需手动配置。
+
 ### 3. 运行示例
 
 ```bash

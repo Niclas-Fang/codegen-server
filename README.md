@@ -8,6 +8,7 @@ A Django-based code completion API server for VSCode intelligent coding assistan
 
 - **AI-Powered Code Completion**: Uses DeepSeek FIM API and multi-provider Chat API
 - **Multi-Provider Support**: DeepSeek, OpenAI, Anthropic, Zhipu
+- **Graph-RAG Enhancement**: Code knowledge graph with LSP-based AST extraction (clangd/ccls)
 - **RESTful API**: Simple JSON-based API for integration with VSCode plugins
 - **CORS Support**: Built-in CORS headers for cross-origin requests
 - **Error Handling**: Comprehensive error codes and messages
@@ -114,6 +115,7 @@ codegen-server/
 │   │   ├── services.py       # DeepSeek FIM API
 │   │   ├── chat_service.py   # Multi-provider chat API
 │   │   ├── model_providers.py # Provider abstraction
+│   │   ├── rag/              # RAG & Graph-RAG module
 │   │   └── urls.py           # App URL routing
 │   ├── manage.py             # Django management script
 │   └── test_api.py           # Test suite
@@ -321,4 +323,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-*Last Updated: 2026-03-24*
+*Last Updated: 2026-05-01*

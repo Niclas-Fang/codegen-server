@@ -81,20 +81,21 @@ pixi run python -m completion.rag.indexer index /path/to/project-b --project-pat
 
 ```bash
 # Show stats
-pixi run python -m completion.rag.indexer stats
+pixi run python -m completion.rag.indexer stats --project-path /path/to/project
 
 # Search index
-pixi run python -m completion.rag.indexer search "def handle_request"
+pixi run python -m completion.rag.indexer search "def handle_request" --project-path /path/to/project
 
 # Clear index
-pixi run python -m completion.rag.indexer clear
+pixi run python -m completion.rag.indexer clear --project-path /path/to/project
 ```
 
 ### Language Server (LSP) Setup
 
 Graph-RAG uses a Language Server (clangd by default) for precise C/C++ AST extraction.
+If clangd is not available, it automatically falls back to ccls (GCC-compatible alternative).
 
-**Install clangd:**
+**Install clangd (recommended) or ccls (fallback):**
 ```bash
 # Ubuntu/Debian
 sudo apt-get install clangd
@@ -118,13 +119,27 @@ pip install compiledb
 compiledb -n make
 ```
 
-**Configure LSP:**
+**Install ccls (fallback, GCC-compatible):**
+```bash
+# Ubuntu/Debian
+sudo apt-get install ccls
+
+# macOS
+brew install ccls
+```
+
+**Configure LSP fallback:**
 ```bash
 # Use custom LSP command
 export LSP_COMMAND="/path/to/clangd"
 export LSP_ARGS="--background-index --clang-tidy"
 
-# Or configure in your environment
+# Customize fallback order (tried in sequence)
+export LSP_FALLBACK_COMMANDS="clangd,ccls"
+
+# Only use ccls (skip clangd)
+export LSP_COMMAND="ccls"
+export LSP_FALLBACK_COMMANDS="ccls"
 ```
 
 The indexer will automatically detect `compile_commands.json` in your project root.
@@ -144,6 +159,7 @@ The indexer will automatically detect `compile_commands.json` in your project ro
 | `RAG_EMBEDDING_MODEL` | No | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
 | `RAG_EMBEDDING_CACHE_SIZE` | No | `1000` | Embedding cache size |
 | `LSP_COMMAND` | No | `clangd` | Language Server command (e.g., clangd) |
+| `LSP_FALLBACK_COMMANDS` | No | `clangd,ccls` | LSP fallback commands (comma-separated, tried in order) |
 | `LSP_ARGS` | No | - | Additional arguments for Language Server |
 
 ### RAG Parameters (in `completion/rag/config.py`)
