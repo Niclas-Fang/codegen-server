@@ -1,18 +1,42 @@
+"""
+Model providers with unified API key handling and OpenAI-compatible base.
+To add a new provider: add an entry to PROVIDER_CONFIG and SUPPORTED_MODELS.
+"""
+
 import os
 import requests
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 DEFAULT_TIMEOUT = 30
 
+# ── provider configuration ──────────────────────────────────
+
+PROVIDER_CONFIG = {
+    "deepseek": {
+        "api_url": "https://api.deepseek.com/v1/chat/completions",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "default_model": "deepseek-chat",
+    },
+    "openai": {
+        "api_url": "https://api.openai.com/v1/chat/completions",
+        "api_key_env": "OPENAI_API_KEY",
+        "default_model": "gpt-5.4",
+    },
+    "zhipu": {
+        "api_url": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
+        "api_key_env": "ZHIPU_API_KEY",
+        "default_model": "glm-5",
+    },
+    "anthropic": {
+        "api_url": "https://api.anthropic.com/v1/messages",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "default_model": "claude-sonnet-4-6-20250217",
+    },
+}
+
 SUPPORTED_MODELS = {
     "deepseek": {
-        "models": [
-            "deepseek-v4-pro",
-            "deepseek-v4-flash",
-            "deepseek-chat",
-            "deepseek-reasoner",
-        ],
-        "default": "deepseek-chat",
+        "models": ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"],
         "description": {
             "deepseek-v4-pro": "DeepSeek-V4 Pro，1.6T MoE，1M 上下文，旗舰推理与编码",
             "deepseek-v4-flash": "DeepSeek-V4 Flash，284B MoE，1M 上下文，高性价比",
@@ -22,18 +46,13 @@ SUPPORTED_MODELS = {
     },
     "openai": {
         "models": ["gpt-5.5", "gpt-5.4"],
-        "default": "gpt-5.4",
         "description": {
             "gpt-5.5": "GPT-5.5 旗舰推理与编码模型，1M 上下文，82.7% Terminal-Bench",
             "gpt-5.4": "GPT-5.4 高性能推理模型，1M 上下文",
         },
     },
     "anthropic": {
-        "models": [
-            "claude-opus-4-7-20260416",
-            "claude-sonnet-4-6-20250217",
-        ],
-        "default": "claude-sonnet-4-6-20250217",
+        "models": ["claude-opus-4-7-20260416", "claude-sonnet-4-6-20250217"],
         "description": {
             "claude-opus-4-7-20260416": "Claude Opus 4.7 旗舰，87.6% SWE-bench，1M 上下文",
             "claude-sonnet-4-6-20250217": "Claude Sonnet 4.6 主力，最佳性价比",
@@ -41,7 +60,6 @@ SUPPORTED_MODELS = {
     },
     "zhipu": {
         "models": ["glm-5.1", "glm-5"],
-        "default": "glm-5",
         "description": {
             "glm-5.1": "GLM-5.1 全自治 Agent，8h 自主工作，SWE-Bench Pro 58.4",
             "glm-5": "GLM-5 旗舰，744B/40B MoE，200K 上下文，开源 SOTA",
@@ -49,174 +67,102 @@ SUPPORTED_MODELS = {
     },
 }
 
+# Set default model for each provider from PROVIDER_CONFIG
+for _name, _cfg in PROVIDER_CONFIG.items():
+    if _name in SUPPORTED_MODELS:
+        SUPPORTED_MODELS[_name]["default"] = _cfg["default_model"]
+
+
+# ── validation helpers ──────────────────────────────────────
 
 def validate_model(provider: str, model: str) -> str:
-    """验证模型名称，返回验证后的模型名称"""
     provider = provider.lower()
     if provider not in SUPPORTED_MODELS:
-        raise ValueError(
-            f"不支持的模型提供者: {provider}。支持: {list(SUPPORTED_MODELS.keys())}"
-        )
-
+        raise ValueError(f"不支持的模型提供者: {provider}。支持: {list(SUPPORTED_MODELS.keys())}")
     supported = SUPPORTED_MODELS[provider]["models"]
     if model not in supported:
-        raise ValueError(
-            f"Provider '{provider}' 不支持模型 '{model}'。支持的模型: {supported}"
-        )
+        raise ValueError(f"Provider '{provider}' 不支持模型 '{model}'。支持的模型: {supported}")
     return model
 
 
 def get_default_model(provider: str) -> str:
-    """获取提供者的默认模型"""
     provider = provider.lower()
-    if provider not in SUPPORTED_MODELS:
+    if provider not in PROVIDER_CONFIG:
         raise ValueError(f"不支持的模型提供者: {provider}")
-    return SUPPORTED_MODELS[provider]["default"]
+    return PROVIDER_CONFIG[provider]["default_model"]
 
 
 def get_all_models() -> Dict[str, Dict[str, Any]]:
-    """获取所有支持的模型信息"""
     return SUPPORTED_MODELS
 
 
+# ── base providers ──────────────────────────────────────────
+
 class BaseProvider:
-    """模型提供者基类"""
+    """模型提供者基类 — 统一 API key 获取."""
 
-    def chat(self, messages: List[Dict[str, str]], model: str, max_tokens: int) -> str:
-        raise NotImplementedError
-
-    def get_api_key(self) -> str:
-        raise NotImplementedError
-
-
-class DeepSeekProvider(BaseProvider):
-    """DeepSeek 模型提供者"""
-
-    API_URL = "https://api.deepseek.com/v1/chat/completions"
-    DEFAULT_MODEL = "deepseek-chat"
+    provider: str = ""  # set by subclass
 
     def get_api_key(self) -> str:
-        api_key = os.getenv("DEEPSEEK_API_KEY")
-        if not api_key:
-            raise ValueError("DEEPSEEK_API_KEY 环境变量未设置")
-        return api_key
+        cfg = PROVIDER_CONFIG[self.provider]
+        key = os.getenv(cfg["api_key_env"])
+        if not key:
+            raise ValueError(f"{cfg['api_key_env']} 环境变量未设置")
+        return key
 
-    def chat(
-        self, messages: List[Dict[str, str]], model: str = None, max_tokens: int = 1000
-    ) -> str:
-        model = model or self.DEFAULT_MODEL
+    def chat(self, messages: List[Dict[str, str]], model: str = None, max_tokens: int = 1000) -> str:
+        raise NotImplementedError
+
+
+class OpenAICompatibleProvider(BaseProvider):
+    """OpenAI-compatible chat completions — used by DeepSeek, OpenAI, Zhipu."""
+
+    def _parse_response(self, result: dict) -> str:
+        """Extract content from response. Override for provider-specific parsing."""
+        return result["choices"][0]["message"]["content"]
+
+    def chat(self, messages: List[Dict[str, str]], model: str = None, max_tokens: int = 1000) -> str:
+        cfg = PROVIDER_CONFIG[self.provider]
+        model = model or cfg["default_model"]
         api_key = self.get_api_key()
 
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
-
-        data = {"model": model, "messages": messages, "max_tokens": max_tokens}
-
-        try:
-            response = requests.post(
-                self.API_URL, headers=headers, json=data, timeout=DEFAULT_TIMEOUT
-            )
-
-            if response.status_code != 200:
-                error_msg = f"DeepSeek API 返回错误: {response.status_code}"
-                try:
-                    error_detail = response.json()
-                    error_msg += (
-                        f" - {error_detail.get('error', {}).get('message', '未知错误')}"
-                    )
-                except:
-                    pass
-                raise Exception(error_msg)
-
-            result = response.json()
-
-            if "choices" not in result or not result["choices"]:
-                return ""
-
-            return result["choices"][0]["message"]["content"]
-
-        except requests.exceptions.Timeout:
-            raise Exception("DeepSeek API 调用超时")
-        except requests.exceptions.ConnectionError:
-            raise Exception("无法连接到 DeepSeek API")
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"DeepSeek API 调用失败: {str(e)}")
-
-
-class OpenAIProvider(BaseProvider):
-    """OpenAI 模型提供者"""
-
-    API_URL = "https://api.openai.com/v1/chat/completions"
-    DEFAULT_MODEL = "gpt-4"
-
-    def get_api_key(self) -> str:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY 环境变量未设置")
-        return api_key
-
-    def chat(
-        self, messages: List[Dict[str, str]], model: str = None, max_tokens: int = 1000
-    ) -> str:
-        model = model or self.DEFAULT_MODEL
-        api_key = self.get_api_key()
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-
-        data = {"model": model, "messages": messages, "max_tokens": max_tokens}
+        body = {"model": model, "messages": messages, "max_tokens": max_tokens}
 
         try:
-            response = requests.post(
-                self.API_URL, headers=headers, json=data, timeout=DEFAULT_TIMEOUT
-            )
-
-            if response.status_code != 200:
-                error_msg = f"OpenAI API 返回错误: {response.status_code}"
-                try:
-                    error_detail = response.json()
-                    error_msg += (
-                        f" - {error_detail.get('error', {}).get('message', '未知错误')}"
-                    )
-                except:
-                    pass
-                raise Exception(error_msg)
-
-            result = response.json()
-
-            if "choices" not in result or not result["choices"]:
-                return ""
-
-            return result["choices"][0]["message"]["content"]
-
+            resp = requests.post(cfg["api_url"], headers=headers, json=body, timeout=DEFAULT_TIMEOUT)
         except requests.exceptions.Timeout:
-            raise Exception("OpenAI API 调用超时")
+            raise Exception(f"{self.provider} API 调用超时")
         except requests.exceptions.ConnectionError:
-            raise Exception("无法连接到 OpenAI API")
+            raise Exception(f"无法连接到 {self.provider} API")
         except requests.exceptions.RequestException as e:
-            raise Exception(f"OpenAI API 调用失败: {str(e)}")
+            raise Exception(f"{self.provider} API 调用失败: {e}")
+
+        if resp.status_code != 200:
+            detail = ""
+            try:
+                detail = resp.json().get("error", {}).get("message", "")
+            except Exception:
+                pass
+            raise Exception(f"{self.provider} API 返回错误: {resp.status_code}" + (f" - {detail}" if detail else ""))
+
+        result = resp.json()
+        if "choices" not in result or not result["choices"]:
+            return ""
+        return self._parse_response(result)
 
 
 class AnthropicProvider(BaseProvider):
-    """Anthropic 模型提供者"""
+    """Anthropic Messages API — different request/response format."""
 
-    API_URL = "https://api.anthropic.com/v1/messages"
-    DEFAULT_MODEL = "claude-3-sonnet-20240229"
+    provider = "anthropic"
 
-    def get_api_key(self) -> str:
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY 环境变量未设置")
-        return api_key
-
-    def chat(
-        self, messages: List[Dict[str, str]], model: str = None, max_tokens: int = 1000
-    ) -> str:
-        model = model or self.DEFAULT_MODEL
+    def chat(self, messages: List[Dict[str, str]], model: str = None, max_tokens: int = 1000) -> str:
+        cfg = PROVIDER_CONFIG[self.provider]
+        model = model or cfg["default_model"]
         api_key = self.get_api_key()
 
         headers = {
@@ -225,115 +171,64 @@ class AnthropicProvider(BaseProvider):
             "anthropic-version": "2023-06-01",
         }
 
-        system_message = ""
-        user_message = ""
+        system = ""
+        user = ""
         for msg in messages:
             if msg["role"] == "system":
-                system_message = msg["content"]
+                system = msg["content"]
             elif msg["role"] == "user":
-                user_message = msg["content"]
+                user = msg["content"]
 
-        data = {
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": user_message}],
-        }
-
-        if system_message:
-            data["system"] = system_message
+        body = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": user}]}
+        if system:
+            body["system"] = system
 
         try:
-            response = requests.post(
-                self.API_URL, headers=headers, json=data, timeout=DEFAULT_TIMEOUT
-            )
-
-            if response.status_code != 200:
-                error_msg = f"Anthropic API 返回错误: {response.status_code}"
-                try:
-                    error_detail = response.json()
-                    error_msg += (
-                        f" - {error_detail.get('error', {}).get('message', '未知错误')}"
-                    )
-                except:
-                    pass
-                raise Exception(error_msg)
-
-            result = response.json()
-
-            if "content" not in result or not result["content"]:
-                return ""
-
-            return result["content"][0]["text"]
-
+            resp = requests.post(cfg["api_url"], headers=headers, json=body, timeout=DEFAULT_TIMEOUT)
         except requests.exceptions.Timeout:
             raise Exception("Anthropic API 调用超时")
         except requests.exceptions.ConnectionError:
             raise Exception("无法连接到 Anthropic API")
         except requests.exceptions.RequestException as e:
-            raise Exception(f"Anthropic API 调用失败: {str(e)}")
+            raise Exception(f"Anthropic API 调用失败: {e}")
+
+        if resp.status_code != 200:
+            detail = ""
+            try:
+                detail = resp.json().get("error", {}).get("message", "")
+            except Exception:
+                pass
+            raise Exception(f"Anthropic API 返回错误: {resp.status_code}" + (f" - {detail}" if detail else ""))
+
+        result = resp.json()
+        if "content" not in result or not result["content"]:
+            return ""
+        return result["content"][0]["text"]
 
 
-class ZhipuProvider(BaseProvider):
-    """智谱AI模型提供者 (兼容OpenAI)"""
+# ── concrete providers ──────────────────────────────────────
 
-    API_URL = "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions"
-    DEFAULT_MODEL = "glm-4-flash"
-
-    def get_api_key(self) -> str:
-        api_key = os.getenv("ZHIPU_API_KEY")
-        if not api_key:
-            raise ValueError("ZHIPU_API_KEY 环境变量未设置")
-        return api_key
-
-    def chat(
-        self, messages: List[Dict[str, str]], model: str = None, max_tokens: int = 1000
-    ) -> str:
-        model = model or self.DEFAULT_MODEL
-        api_key = self.get_api_key()
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-
-        data = {"model": model, "messages": messages, "max_tokens": max_tokens}
-
-        try:
-            response = requests.post(
-                self.API_URL, headers=headers, json=data, timeout=DEFAULT_TIMEOUT
-            )
-
-            if response.status_code != 200:
-                error_msg = f"智谱AI API 返回错误: {response.status_code}"
-                try:
-                    error_detail = response.json()
-                    error_msg += (
-                        f" - {error_detail.get('error', {}).get('message', '未知错误')}"
-                    )
-                except:
-                    pass
-                raise Exception(error_msg)
-
-            result = response.json()
-
-            if "choices" not in result or not result["choices"]:
-                return ""
-
-            message = result["choices"][0]["message"]
-            content = message.get("content", "")
-            if not content:
-                content = message.get("reasoning_content", "")
-            return content
-
-        except requests.exceptions.Timeout:
-            raise Exception("智谱AI API 调用超时")
-        except requests.exceptions.ConnectionError:
-            raise Exception("无法连接到智谱AI API")
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"智谱AI API 调用失败: {str(e)}")
+class DeepSeekProvider(OpenAICompatibleProvider):
+    provider = "deepseek"
 
 
-_PROVIDER_MAP = {
+class OpenAIProvider(OpenAICompatibleProvider):
+    provider = "openai"
+
+
+class ZhipuProvider(OpenAICompatibleProvider):
+    """智谱AI — OpenAI兼容，推理模型需回退到 reasoning_content."""
+
+    provider = "zhipu"
+
+    def _parse_response(self, result: dict) -> str:
+        msg = result["choices"][0]["message"]
+        return msg.get("content") or msg.get("reasoning_content", "")
+
+
+# ── provider registry ───────────────────────────────────────
+
+_PROVIDER_CLASSES = {
     "deepseek": DeepSeekProvider,
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
@@ -344,14 +239,12 @@ _DEFAULT_PROVIDER = "deepseek"
 
 
 def get_provider(name: str = None) -> BaseProvider:
-    """获取模型提供者实例"""
-    name = name or _DEFAULT_PROVIDER
-    provider_class = _PROVIDER_MAP.get(name.lower())
-    if not provider_class:
+    name = (name or _DEFAULT_PROVIDER).lower()
+    cls = _PROVIDER_CLASSES.get(name)
+    if not cls:
         raise ValueError(f"不支持的模型提供者: {name}")
-    return provider_class()
+    return cls()
 
 
 def get_available_providers() -> List[str]:
-    """获取可用的模型提供者列表"""
-    return list(_PROVIDER_MAP.keys())
+    return list(_PROVIDER_CLASSES.keys())
