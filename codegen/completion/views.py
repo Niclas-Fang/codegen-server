@@ -1,24 +1,35 @@
 import json
+import os
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
 from .services import call_fim_api
 from .chat_service import call_chat_api
-from .model_providers import get_all_models, get_available_providers
+from .model_providers import get_all_models, get_available_providers, PROVIDER_CONFIG
+
+
+def health(request):
+    """Health check — returns provider status without exposing keys."""
+    providers = {}
+    for name, cfg in PROVIDER_CONFIG.items():
+        key_set = bool(os.getenv(cfg["api_key_env"]))
+        providers[name] = {"configured": key_set, "default_model": cfg["default_model"]}
+    return JsonResponse({"status": "ok", "providers": providers})
+
+CORS_ORIGIN = os.getenv("CORS_ALLOWED_ORIGIN", "*")
 
 
 def cors_exempt(view_func):
-    """CORS装饰器"""
+    """CORS decorator — origin configurable via CORS_ALLOWED_ORIGIN env var."""
 
     def wrapped_view(request, *args, **kwargs):
         if request.method == "OPTIONS":
             response = HttpResponse()
-            response["Access-Control-Allow-Origin"] = "*"
+            response["Access-Control-Allow-Origin"] = CORS_ORIGIN
             response["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
             response["Access-Control-Allow-Headers"] = "Content-Type"
             return response
         response = view_func(request, *args, **kwargs)
-        response["Access-Control-Allow-Origin"] = "*"
+        response["Access-Control-Allow-Origin"] = CORS_ORIGIN
         response["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
         response["Access-Control-Allow-Headers"] = "Content-Type"
         return response

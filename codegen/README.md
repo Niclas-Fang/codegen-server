@@ -161,6 +161,11 @@ export LSP_FALLBACK_COMMANDS="clangd,ccls"  # tried in order
 | `LSP_COMMAND` | No | `clangd` | Language Server command |
 | `LSP_FALLBACK_COMMANDS` | No | `clangd,ccls` | LSP fallback commands (comma-separated) |
 | `LSP_ARGS` | No | - | Additional arguments for Language Server |
+| `DJANGO_DEBUG` | No | `false` | Enable Django debug mode |
+| `DJANGO_SECRET_KEY` | Yes* | - | Django secret key (required in production) |
+| `DJANGO_ALLOWED_HOSTS` | No | `localhost,127.0.0.1` | Comma-separated allowed hosts |
+| `DJANGO_LOG_LEVEL` | No | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
+| `CORS_ALLOWED_ORIGIN` | No | `*` (debug) / `` (production) | CORS allowed origin |
 
 ### RAG Parameters (in `completion/rag/config.py`)
 
@@ -203,11 +208,29 @@ codegen/
 ### Environment Configuration
 
 ```bash
-DEEPSEEK_API_KEY=your-api-key
-DEBUG=False
-SECRET_KEY=<random-string>
-ALLOWED_HOSTS=your-domain.com
-RAG_ENABLED=true
+# Required: generate a random secret key
+export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
+
+# Required: at least one LLM provider API key
+export DEEPSEEK_API_KEY="sk-..."
+
+# Django
+export DJANGO_DEBUG=false
+export DJANGO_ALLOWED_HOSTS="your-domain.com,api.your-domain.com"
+export DJANGO_LOG_LEVEL=INFO
+
+# CORS — restrict in production
+export CORS_ALLOWED_ORIGIN="https://your-editor-origin.com"
+
+# RAG (optional)
+export RAG_ENABLED=true
+```
+
+### Health Check
+
+```bash
+curl http://localhost:8000/api/v1/health
+# {"status": "ok", "providers": {"deepseek": {"configured": true, ...}}}
 ```
 
 ### Using Gunicorn
