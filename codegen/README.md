@@ -7,15 +7,20 @@ A Django-based code completion API server for VSCode plugin, supporting DeepSeek
 - **FIM Mode**: Fill-in-the-middle code completion via DeepSeek API
 - **Chat Mode**: Multi-provider chat completion (DeepSeek, OpenAI, Anthropic, Zhipu)
 - **Graph-RAG Enhancement**: Hybrid graph + vector retrieval for superior code context
-- **Language Server Protocol (LSP)**: Uses clangd for precise C/C++ AST extraction
+- **Language Server Protocol (LSP)**: Uses clangd (or ccls as fallback) for precise C/C++ AST extraction
 - **Code Knowledge Graph**: Extracts functions, classes, imports, calls, inheritance via LSP
 - **Graph Traversal**: Multi-hop retrieval through call chains and dependencies
 - **Project Isolation**: Each project has its own vector store and graph
-- **Incremental Indexing**: Only update changed files, no full rebuild needed
+- **Incremental Indexing**: Only update changed files (mtime-based), no full rebuild needed
 - **Embedding Cache**: LRU cache for faster repeated queries
-- **Similarity Threshold**: Filter out low-quality retrieval results
 
 ## Quick Start
+
+### Prerequisites
+
+- Python 3.14.1+
+- [Pixi](https://pixi.sh/latest/) installed
+- At least one API key: `DEEPSEEK_API_KEY`, `ZHIPU_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
 
 ```bash
 # Install dependencies
@@ -40,7 +45,19 @@ pixi run python test_api.py
 - `POST /api/v1/chat` - Chat code completion with RAG support
 - `GET /api/v1/models` - List available models and providers
 
-### Chat API with Graph-RAG
+### FIM Completion
+
+```bash
+curl -X POST http://localhost:8000/api/v1/completion \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "int main() {\n    int a = 10;\n    int b = 20;\n    ",
+    "suffix": "\n    return 0;\n}",
+    "max_tokens": 100
+  }'
+```
+
+### Chat Completion with Graph-RAG
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/chat \
@@ -84,7 +101,7 @@ pixi run python -m completion.rag.indexer index /path/to/project-b --project-pat
 pixi run python -m completion.rag.indexer stats --project-path /path/to/project
 
 # Search index
-pixi run python -m completion.rag.indexer search "def handle_request" --project-path /path/to/project
+pixi run python -m completion.rag.indexer search "def handle_request"
 
 # Clear index
 pixi run python -m completion.rag.indexer clear --project-path /path/to/project
@@ -92,31 +109,15 @@ pixi run python -m completion.rag.indexer clear --project-path /path/to/project
 
 ### Language Server (LSP) Setup
 
-Graph-RAG uses a Language Server (clangd by default) for precise C/C++ AST extraction.
-If clangd is not available, it automatically falls back to ccls (GCC-compatible alternative).
+Graph-RAG uses a Language Server for precise C/C++ AST extraction. If clangd is not available, it automatically falls back to ccls (GCC-compatible alternative). If neither is available, it falls back to regex-based parsing.
 
-**Install clangd (recommended) or ccls (fallback):**
+**Install clangd (recommended):**
 ```bash
 # Ubuntu/Debian
 sudo apt-get install clangd
 
 # macOS
 brew install llvm
-
-# Or download from https://github.com/clangd/clangd/releases
-```
-
-**Generate compile_commands.json:**
-```bash
-# Using CMake
-cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .
-
-# Using Bear (build ear)
-bear -- make
-
-# Using compiledb
-pip install compiledb
-compiledb -n make
 ```
 
 **Install ccls (fallback, GCC-compatible):**
@@ -128,21 +129,20 @@ sudo apt-get install ccls
 brew install ccls
 ```
 
-**Configure LSP fallback:**
+**Generate compile_commands.json (optional, for better LSP accuracy):**
 ```bash
-# Use custom LSP command
-export LSP_COMMAND="/path/to/clangd"
-export LSP_ARGS="--background-index --clang-tidy"
+# Using CMake
+cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .
 
-# Customize fallback order (tried in sequence)
-export LSP_FALLBACK_COMMANDS="clangd,ccls"
-
-# Only use ccls (skip clangd)
-export LSP_COMMAND="ccls"
-export LSP_FALLBACK_COMMANDS="ccls"
+# Using Bear
+bear -- make
 ```
 
-The indexer will automatically detect `compile_commands.json` in your project root.
+**Configure LSP fallback:**
+```bash
+export LSP_COMMAND="clangd"
+export LSP_FALLBACK_COMMANDS="clangd,ccls"  # tried in order
+```
 
 ## Configuration
 
@@ -156,10 +156,10 @@ The indexer will automatically detect `compile_commands.json` in your project ro
 | `ANTHROPIC_API_KEY` | For anthropic | - | Anthropic API key |
 | `RAG_ENABLED` | No | `true` | Enable RAG globally |
 | `GRAPH_RAG_ENABLED` | No | `true` | Enable Graph-RAG globally |
-| `RAG_EMBEDDING_MODEL` | No | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
+| `RAG_EMBEDDING_MODEL` | No | `all-MiniLM-L6-v2` | Embedding model |
 | `RAG_EMBEDDING_CACHE_SIZE` | No | `1000` | Embedding cache size |
-| `LSP_COMMAND` | No | `clangd` | Language Server command (e.g., clangd) |
-| `LSP_FALLBACK_COMMANDS` | No | `clangd,ccls` | LSP fallback commands (comma-separated, tried in order) |
+| `LSP_COMMAND` | No | `clangd` | Language Server command |
+| `LSP_FALLBACK_COMMANDS` | No | `clangd,ccls` | LSP fallback commands (comma-separated) |
 | `LSP_ARGS` | No | - | Additional arguments for Language Server |
 
 ### RAG Parameters (in `completion/rag/config.py`)
@@ -171,6 +171,7 @@ The indexer will automatically detect `compile_commands.json` in your project ro
 | `DEFAULT_TOP_K` | 5 | Number of results to retrieve |
 | `MAX_CONTEXT_CHUNKS` | 3 | Max chunks in context |
 | `SIMILARITY_THRESHOLD` | 0.5 | Minimum similarity score |
+| `GRAPH_HOPS` | 2 | Graph traversal hops |
 
 ## Project Structure
 
@@ -197,21 +198,76 @@ codegen/
 └── test_api.py           # Test suite
 ```
 
-## Prompt Concatenation Locations
+## Production Deployment
 
-The system constructs prompts at multiple layers:
+### Environment Configuration
 
-1. **`services.py:48-85`** - FIM mode: includes + other_functions + prompt + suffix
-2. **`chat_service.py:70-77`** - Chat mode: RAG augmentation + prompt building
-3. **`chat_service.py:88-115`** - `_augment_prompt_with_rag()`: `// Relevant code...` + rag_context + `// Current code...` + prompt
-4. **`prompt_templates.py:8-21`** - Template: `{includes}` + `{functions}` + `{prompt}▌{suffix}`
-5. **`retriever.py:176-180`** - RAG context formatting with source paths
+```bash
+DEEPSEEK_API_KEY=your-api-key
+DEBUG=False
+SECRET_KEY=<random-string>
+ALLOWED_HOSTS=your-domain.com
+RAG_ENABLED=true
+```
+
+### Using Gunicorn
+
+```bash
+pixi add --pypi gunicorn
+pixi run gunicorn api.wsgi:application \
+  --bind 0.0.0.0:8000 \
+  --workers 4 \
+  --timeout 120
+```
+
+## Troubleshooting
+
+### Server Won't Start
+
+```bash
+# Check environment variables
+echo $DEEPSEEK_API_KEY
+
+# Check port availability
+netstat -tlnp | grep :8000
+
+# Check Django configuration
+pixi run python manage.py check
+```
+
+### API Returns 500 Error
+
+```bash
+# Check API key
+curl -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
+  https://api.deepseek.com/beta/models
+```
+
+### RAG Retrieval Not Working
+
+```bash
+# Check if index exists
+pixi run python -m completion.rag.indexer stats
+
+# Build index if missing
+pixi run python -m completion.rag.indexer index <code-directory>
+
+# Ensure project_path matches the one used during indexing
+```
+
+## Security
+
+1. **API Key Security**: Never commit API keys to version control. Use environment variables.
+2. **Access Control**: Restrict `ALLOWED_HOSTS` in production.
+3. **CORS**: Specify specific domains instead of `*` in production.
 
 ## Documentation
 
 - [API文档.md](API文档.md) - Complete API specification (Chinese)
-- [部署指南.md](部署指南.md) - Deployment guide with RAG setup (Chinese)
-- [AGENTS.md](AGENTS.md) - Development guide
+- [README-zh.md](README-zh.md) - Chinese translation of this README
+- [AGENTS.md](AGENTS.md) - Development guide for AI agents
+- [CLAUDE.md](CLAUDE.md) - Claude Code project instructions
+- [examples/](examples/) - FIM and RAG usage examples
 
 ## License
 

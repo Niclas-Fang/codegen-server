@@ -158,5 +158,6 @@ pixi run python test_api.py
 
 ## Documentation
 - `API文档.md` - Complete API specs (Chinese)
-- `部署指南.md` - Deployment guide (Chinese)
+- `部署指南.md` - Deployment guide (Chinese, replaced by README-zh.md)
+- `README-zh.md` - Chinese README translation
 - `项目进展报告.md` - Project progress (Chinese)
