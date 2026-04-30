@@ -6,8 +6,8 @@ import os
 import hashlib
 from pathlib import Path
 
-# Base directory for RAG data
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+# Base directory for RAG data (inside codegen/ for self-contained project)
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Vector store configuration - supports per-project isolation
 VECTOR_STORE_BASE_DIR = BASE_DIR / "rag_data" / "vector_stores"

@@ -177,7 +177,7 @@ export LSP_FALLBACK_COMMANDS="clangd,ccls"  # tried in order
 
 ```
 codegen/
-├── api/                  # Django project config
+├── config/               # Django project settings
 ├── completion/           # Main Django app
 │   ├── views.py          # API handlers
 │   ├── services.py       # DeepSeek FIM API
@@ -214,7 +214,7 @@ RAG_ENABLED=true
 
 ```bash
 pixi add --pypi gunicorn
-pixi run gunicorn api.wsgi:application \
+pixi run gunicorn config.wsgi:application \
   --bind 0.0.0.0:8000 \
   --workers 4 \
   --timeout 120

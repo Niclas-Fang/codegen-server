@@ -42,5 +42,9 @@ htmlcov/
 .coverage
 .coverage.*
 
+# Local config
+.sisyphus/
+.claude/
+
 # Claude
 CLAUDE.md
