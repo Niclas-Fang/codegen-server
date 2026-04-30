@@ -55,7 +55,7 @@ class GraphStore:
         if self._graph_path.exists():
             with open(self._graph_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            self._graph = nx.node_link_graph(data)
+            self._graph = nx.node_link_graph(data, edges="links")
             # Rebuild entity map
             for node, attrs in self._graph.nodes(data=True):
                 self._entity_map[node] = dict(attrs)
@@ -66,7 +66,7 @@ class GraphStore:
         import networkx as nx
         
         self._graph_path.parent.mkdir(parents=True, exist_ok=True)
-        data = nx.node_link_data(self._graph)
+        data = nx.node_link_data(self._graph, edges="links")
         with open(self._graph_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     
@@ -124,20 +124,16 @@ class GraphStore:
     
     def _resolve_node_id(self, name: str) -> Optional[str]:
         """Resolve a name to a node ID."""
-        # Try exact match
-        if name in self._entity_map:
-            candidates = [
-                nid for nid, attrs in self._entity_map.items()
-                if attrs.get("name") == name
-            ]
-            if candidates:
-                return candidates[0]
-        
-        # Try file entity
-        file_id = f"file:{name}"
-        if self.graph.has_node(file_id):
-            return file_id
-        
+        # Search by entity name in entity map
+        for nid, attrs in self._entity_map.items():
+            if attrs.get("name") == name:
+                return nid
+
+        # Try file entity (match by basename or full path)
+        for nid in list(self._entity_map.keys()):
+            if nid.startswith("file:") and (nid.endswith(f"/{name}") or nid == f"file:{name}"):
+                return nid
+
         return None
     
     def get_neighbors(

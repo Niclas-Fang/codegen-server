@@ -111,6 +111,9 @@ EMBEDDING_CACHE_SIZE = int(os.getenv("RAG_EMBEDDING_CACHE_SIZE", "1000"))
 # Language Server configuration
 LSP_COMMAND = os.getenv("LSP_COMMAND", "clangd")
 LSP_ARGS = os.getenv("LSP_ARGS", "").split() if os.getenv("LSP_ARGS") else []
+LSP_FALLBACK_COMMANDS = os.getenv(
+    "LSP_FALLBACK_COMMANDS", "clangd,ccls"
+).split(",")
 
 # Graph-RAG configuration
 GRAPH_RAG_ENABLED = os.getenv("GRAPH_RAG_ENABLED", "true").lower() == "true"

@@ -72,25 +72,36 @@ def _parse_with_lsp(file_path: Path, lsp_client: Any) -> ParseResult:
     entities = []
     relations = []
     errors = []
-    
-    # Open document in LSP
-    lsp_client.open_document(str(file_path))
-    
+
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            file_lines = f.readlines()
+        file_content = "".join(file_lines)
+    except Exception:
+        file_lines = []
+        file_content = ""
+
+    # Open document in LSP with cached content
+    lsp_client.open_document(str(file_path), content=file_content)
+
     try:
         # Get all symbols in the document
         symbols = lsp_client.get_document_symbols(str(file_path))
-        
+
         # Convert LSP symbols to our entity format
-        _convert_symbols(symbols, str(file_path), entities, relations)
-        
+        _convert_symbols(symbols, str(file_path), entities, relations, file_lines=file_lines)
+
+        # Build a fast lookup map for containing-function queries
+        file_functions = _build_function_lookup(entities)
+
         # Extract call relationships by analyzing function bodies
-        _extract_call_relations_lsp(symbols, str(file_path), lsp_client, entities, relations)
-        
+        _extract_call_relations_lsp(symbols, str(file_path), lsp_client, file_functions, relations)
+
     except Exception as e:
         errors.append(f"LSP parse error for {file_path}: {e}")
     finally:
         lsp_client.close_document(str(file_path))
-    
+
     return ParseResult(entities=entities, relations=relations, errors=errors)
 
 
@@ -100,16 +111,17 @@ def _convert_symbols(
     entities: List[CodeEntity],
     relations: List[CodeRelation],
     parent_name: Optional[str] = None,
+    file_lines: Optional[List[str]] = None,
 ):
     """Recursively convert LSP symbols to our entity format."""
     file_name = Path(file_path).name
-    
+
     for symbol in symbols:
         entity_type = _map_lsp_kind_to_entity(symbol.kind)
-        
-        # Read symbol content from file
-        content = _extract_symbol_content(file_path, symbol)
-        
+
+        # Read symbol content from cached lines
+        content = _extract_symbol_content(symbol, file_lines)
+
         entity = CodeEntity(
             name=symbol.name,
             entity_type=entity_type,
@@ -121,7 +133,7 @@ def _convert_symbols(
             parent=parent_name,
         )
         entities.append(entity)
-        
+
         # Create contains relation
         container = parent_name if parent_name else file_name
         relations.append(CodeRelation(
@@ -129,12 +141,12 @@ def _convert_symbols(
             target=symbol.name,
             relation_type="contains",
         ))
-        
+
         # Handle inheritance for classes
         if entity_type == "class" and symbol.detail:
             # Parse inheritance from detail like "class Foo : public Bar"
             _parse_inheritance(symbol.detail, symbol.name, relations)
-        
+
         # Recursively process children
         if symbol.children:
             _convert_symbols(
@@ -143,14 +155,30 @@ def _convert_symbols(
                 entities,
                 relations,
                 parent_name=symbol.name,
+                file_lines=file_lines,
             )
+
+
+def _build_function_lookup(
+    entities: List[CodeEntity],
+) -> Dict[str, List[Tuple[int, int, str]]]:
+    """Build a file->sorted-functions map for fast containing-function lookup."""
+    lookup: Dict[str, List[Tuple[int, int, str]]] = {}
+    for e in entities:
+        if e.entity_type in ("function", "method"):
+            lookup.setdefault(e.source_file, []).append(
+                (e.line_start, e.line_end, e.name)
+            )
+    for funcs in lookup.values():
+        funcs.sort(key=lambda t: t[0])
+    return lookup
 
 
 def _extract_call_relations_lsp(
     symbols: List[Any],
     file_path: str,
     lsp_client: Any,
-    entities: List[CodeEntity],
+    file_functions: Dict[str, List[Tuple[int, int, str]]],
     relations: List[CodeRelation],
 ):
     """Extract function call relationships using LSP references."""
@@ -162,13 +190,13 @@ def _extract_call_relations_lsp(
                 symbol.selection_start.get("line", 0),
                 symbol.selection_start.get("character", 0),
             )
-            
+
             for ref in refs:
                 # Find which function contains this reference
                 caller = _find_containing_function(
                     ref.uri.replace("file://", ""),
                     ref.start_line,
-                    entities,
+                    file_functions,
                 )
                 if caller and caller != symbol.name:
                     relations.append(CodeRelation(
@@ -176,32 +204,32 @@ def _extract_call_relations_lsp(
                         target=symbol.name,
                         relation_type="calls",
                     ))
-        
+
         # Recurse into children
         if symbol.children:
             _extract_call_relations_lsp(
-                symbol.children, file_path, lsp_client, entities, relations
+                symbol.children, file_path, lsp_client, file_functions, relations
             )
 
 
 def _find_containing_function(
     file_path: str,
     line: int,
-    entities: List[CodeEntity],
+    file_functions: Dict[str, List[Tuple[int, int, str]]],
 ) -> Optional[str]:
-    """Find the function that contains a given line."""
+    """Find the function that contains a given line using pre-built lookup."""
+    funcs = file_functions.get(file_path, [])
     candidates = [
-        e for e in entities
-        if e.source_file == file_path
-        and e.entity_type in ("function", "method")
-        and e.line_start <= line + 1 <= e.line_end
+        (start, end, name)
+        for start, end, name in funcs
+        if start <= line + 1 <= end
     ]
-    
+
     if candidates:
         # Return the most specific (smallest range) function
-        candidates.sort(key=lambda e: e.line_end - e.line_start)
-        return candidates[0].name
-    
+        candidates.sort(key=lambda t: t[1] - t[0])
+        return candidates[0][2]
+
     return None
 
 
@@ -238,20 +266,17 @@ def _map_lsp_kind_to_entity(lsp_kind: str) -> str:
     return kind_map.get(lsp_kind, "unknown")
 
 
-def _extract_symbol_content(file_path: str, symbol: Any) -> str:
-    """Extract the source code content of a symbol."""
-    try:
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            lines = f.readlines()
-        
-        start_line = symbol.range_start.get("line", 0)
-        end_line = symbol.range_end.get("line", 0)
-        
-        # Extract lines (0-indexed)
-        content_lines = lines[start_line:end_line + 1]
-        return "".join(content_lines)
-    except Exception:
+def _extract_symbol_content(symbol: Any, file_lines: Optional[List[str]] = None) -> str:
+    """Extract the source code content of a symbol from cached lines."""
+    if not file_lines:
         return ""
+
+    start_line = symbol.range_start.get("line", 0)
+    end_line = symbol.range_end.get("line", 0)
+
+    # Extract lines (0-indexed)
+    content_lines = file_lines[start_line:end_line + 1]
+    return "".join(content_lines)
 
 
 def _parse_inheritance(detail: str, class_name: str, relations: List[CodeRelation]):

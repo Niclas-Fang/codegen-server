@@ -16,4 +16,6 @@ llama-index = ">=0.12.52,<0.13"
 [pypi-dependencies]
 django-stubs = ">=5.2.8, <6"
 requests = "*"
-networkx = ">=3.0"
+networkx = "*"
+sentence-transformers = ">=5.4.1, <6"
+faiss-cpu = ">=1.13.2, <2"

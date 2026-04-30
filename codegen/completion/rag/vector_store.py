@@ -194,8 +194,13 @@ class VectorStore:
         # Add to index
         self.index.add_with_ids(embeddings, ids)
 
-        # Add metadata
         for i, chunk in enumerate(chunks):
+            mtime = 0.0
+            if chunk.source:
+                try:
+                    mtime = os.path.getmtime(chunk.source)
+                except OSError:
+                    pass
             self._metadata.append(
                 {
                     "id": start_id + i,
@@ -205,6 +210,7 @@ class VectorStore:
                     "chunk_index": chunk.chunk_index,
                     "start_char": chunk.start_char,
                     "end_char": chunk.end_char,
+                    "mtime": mtime,
                 }
             )
 
@@ -315,6 +321,9 @@ class VectorStore:
 
     def count(self) -> int:
         """Get number of chunks in the store"""
+        # Ensure index is loaded (count is often queried without prior index access)
+        if self._index is None:
+            self._load_index()
         return len(self._metadata)
 
     def clear(self):
@@ -336,6 +345,15 @@ class VectorStore:
     def get_sources(self) -> set[str]:
         """Get all indexed source files."""
         return set(m.get("source", "") for m in self._metadata)
+
+    def get_source_mtimes(self) -> dict[str, float]:
+        """Get the latest mtime for each indexed source file."""
+        mtimes: dict[str, float] = {}
+        for m in self._metadata:
+            src = m.get("source", "")
+            if src:
+                mtimes[src] = max(mtimes.get(src, 0.0), m.get("mtime", 0.0))
+        return mtimes
 
 
 # Global store cache to avoid reloading

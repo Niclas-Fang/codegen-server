@@ -176,11 +176,7 @@ def augment_context_with_retrieval(
     if not rag_context:
         return prompt
 
-    # Prepend RAG context to the prompt
-    augmented = f"""// Relevant code from knowledge base:
-{rag_context}
-
-// Current code context:
-{prompt}"""
+    # Prepend RAG context directly as natural code context
+    augmented = f"{rag_context}\n\n{prompt}"
 
     return augmented

@@ -6,6 +6,7 @@ Provides precise AST information for code knowledge graph construction.
 
 import json
 import os
+import shutil
 import subprocess
 import threading
 import uuid
@@ -92,15 +93,17 @@ class LSPClient:
         self._initialized = False
         self._shutdown = False
     
+    @staticmethod
+    def is_command_available(command: str) -> bool:
+        """Check if a command is available in PATH."""
+        return shutil.which(command) is not None
+
     def start(self) -> bool:
         """Start the Language Server process."""
         try:
-            # Add compile_commands.json hint if available
-            if self.workspace_path:
-                compile_db = Path(self.workspace_path) / "compile_commands.json"
-                if compile_db.exists():
-                    if "--compile-commands-dir" not in self.args:
-                        self.args.extend(["--compile-commands-dir", str(self.workspace_path)])
+            # Add compile_commands.json hint if workspace is set
+            if self.workspace_path and "--compile-commands-dir" not in self.args:
+                self.args.extend(["--compile-commands-dir", str(self.workspace_path)])
             
             self.process = subprocess.Popen(
                 [self.command] + self.args,
@@ -129,10 +132,16 @@ class LSPClient:
                 self._send_request("shutdown", {})
                 self._send_notification("exit", {})
                 self.process.wait(timeout=5)
-            except:
+            except Exception:
                 self.process.kill()
             finally:
                 self._shutdown = True
+                for pipe in (self.process.stdin, self.process.stdout, self.process.stderr):
+                    if pipe:
+                        try:
+                            pipe.close()
+                        except Exception:
+                            pass
     
     def _initialize(self) -> bool:
         """Send initialize request to Language Server."""
@@ -252,14 +261,8 @@ class LSPClient:
     
     def _read_line(self) -> str:
         """Read a line from server stdout."""
-        line = ""
-        while True:
-            char = self.process.stdout.read(1)
-            if not char:
-                return line
-            line += char
-            if char == "\n":
-                return line
+        line = self.process.stdout.readline()
+        return line if line else ""
     
     def open_document(self, file_path: str, content: str = "", language_id: str = "cpp"):
         """Notify server that a document is open."""

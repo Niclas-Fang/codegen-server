@@ -9,20 +9,15 @@ Usage:
 """
 
 import argparse
-import sys
 import os
 from pathlib import Path
-from datetime import datetime
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from completion.rag.chunker import CodeChunker
 from completion.rag.vector_store import get_vector_store, clear_store_cache
 from completion.rag.retriever import retrieve_relevant_code, format_retrieval_context
 from completion.rag.graph_store import get_graph_store, clear_graph_store_cache
 from completion.rag.code_parser import parse_file_with_lsp
-from completion.rag.config import get_vector_store_dir, LSP_COMMAND
+from completion.rag.config import get_vector_store_dir, LSP_COMMAND, LSP_FALLBACK_COMMANDS
 
 
 def get_file_mtime(path: Path) -> float:
@@ -107,17 +102,19 @@ def build_index(directory: Path, project_path: str = "", verbose: bool = True, i
             
             # Filter to only changed/new files
             changed_chunks = []
+            indexed_mtimes = vector_store.get_source_mtimes()
             for chunk in all_chunks:
                 src = chunk.source
                 if not os.path.isabs(src):
                     src = str(directory / src)
                 src = os.path.normpath(src)
-                
+
                 if src not in indexed_sources:
                     changed_chunks.append(chunk)
                 else:
                     current_mtime = get_file_mtime(Path(src))
-                    changed_chunks.append(chunk)
+                    if current_mtime > indexed_mtimes.get(src, 0.0):
+                        changed_chunks.append(chunk)
             
             if changed_chunks and verbose:
                 print(f"Updating {len(set(c.source for c in changed_chunks))} changed/new files...")
@@ -161,23 +158,35 @@ def build_index(directory: Path, project_path: str = "", verbose: bool = True, i
         print("Building code knowledge graph...")
     
     lsp_client = None
-    try:
-        from completion.rag.lsp_client import LSPClient
-        lsp_client = LSPClient(
-            command=LSP_COMMAND,
-            workspace_path=str(directory),
-        )
-        if lsp_client.start():
+    lsp_commands = [LSP_COMMAND] + [c for c in LSP_FALLBACK_COMMANDS if c != LSP_COMMAND]
+
+    for cmd in lsp_commands:
+        try:
+            from completion.rag.lsp_client import LSPClient
+            if not LSPClient.is_command_available(cmd):
+                if verbose:
+                    print(f"  LSP command not found: {cmd}")
+                continue
+
+            lsp_client = LSPClient(
+                command=cmd,
+                workspace_path=str(directory),
+            )
+            if lsp_client.start():
+                if verbose:
+                    print(f"  Connected to Language Server: {cmd}")
+                break
+            else:
+                if verbose:
+                    print(f"  Warning: Could not start {cmd}, trying next...")
+                lsp_client = None
+        except Exception as e:
             if verbose:
-                print(f"  Connected to Language Server: {LSP_COMMAND}")
-        else:
-            if verbose:
-                print(f"  Warning: Could not start Language Server, using fallback parser")
+                print(f"  Warning: {cmd} unavailable ({e}), trying next...")
             lsp_client = None
-    except Exception as e:
-        if verbose:
-            print(f"  Warning: LSP unavailable ({e}), using fallback parser")
-        lsp_client = None
+
+    if lsp_client is None and verbose:
+        print(f"  No Language Server available, using fallback parser")
     
     indexed_files = set(c.source for c in all_chunks)
     total_entities = 0
@@ -203,7 +212,8 @@ def build_index(directory: Path, project_path: str = "", verbose: bool = True, i
         if lsp_client:
             lsp_client.stop()
     
-    graph_store._save_graph()
+    if total_entities > 0 or total_relations > 0:
+        graph_store._save_graph()
     
     # Also add chunks to graph store's vector store (same as main vector store)
     graph_store.add_chunks_to_vector_store(all_chunks)
@@ -307,17 +317,15 @@ def main():
     parser = argparse.ArgumentParser(
         description="RAG Indexer - Build and search code knowledge base"
     )
-    parser.add_argument(
-        "--project-path",
-        type=str,
-        default="",
-        help="Project path for vector store isolation (default: shared store)",
-    )
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     # Index command
     index_parser = subparsers.add_parser("index", help="Index a directory of code")
     index_parser.add_argument("directory", type=Path, help="Directory to index")
+    index_parser.add_argument(
+        "--project-path", type=str, default="",
+        help="Project path for vector store isolation (default: shared store)",
+    )
     index_parser.add_argument(
         "--full", action="store_true", help="Force full rebuild instead of incremental"
     )
@@ -328,15 +336,27 @@ def main():
     # Clear command
     clear_parser = subparsers.add_parser("clear", help="Clear the index")
     clear_parser.add_argument(
+        "--project-path", type=str, default="",
+        help="Project path for vector store isolation (default: shared store)",
+    )
+    clear_parser.add_argument(
         "--no-verbose", action="store_true", help="Suppress output"
     )
 
     # Stats command
-    subparsers.add_parser("stats", help="Show index statistics")
+    stats_parser = subparsers.add_parser("stats", help="Show index statistics")
+    stats_parser.add_argument(
+        "--project-path", type=str, default="",
+        help="Project path for vector store isolation (default: shared store)",
+    )
 
     # Search command
     search_parser = subparsers.add_parser("search", help="Search the index")
     search_parser.add_argument("query", help="Search query")
+    search_parser.add_argument(
+        "--project-path", type=str, default="",
+        help="Project path for vector store isolation (default: shared store)",
+    )
     search_parser.add_argument(
         "--top-k", type=int, default=5, help="Number of results to return"
     )
