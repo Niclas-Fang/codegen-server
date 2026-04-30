@@ -39,24 +39,26 @@
   "providers": ["deepseek", "openai", "anthropic", "zhipu"],
   "models": {
     "deepseek": {
-      "models": ["deepseek-chat", "deepseek-reasoner"],
+      "models": ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"],
       "default": "deepseek-chat",
       "description": {
-        "deepseek-chat": "DeepSeek-V3.2 通用对话模型，适合代码补全和日常对话",
-        "deepseek-reasoner": "DeepSeek-V3.2 推理模型，支持深度思考模式"
+        "deepseek-v4-pro": "DeepSeek-V4 Pro，1.6T MoE，1M 上下文",
+        "deepseek-v4-flash": "DeepSeek-V4 Flash，284B MoE，高性价比",
+        "deepseek-chat": "DeepSeek-V3.2 通用对话模型",
+        "deepseek-reasoner": "DeepSeek-V3.2 推理模型"
       }
     },
     "openai": {
-      "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo", "o1", "o1-mini", "o1-preview"],
+      "models": ["gpt-5.4", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o4-mini", "o3-pro"],
       "default": "gpt-4o"
     },
     "anthropic": {
-      "models": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"],
-      "default": "claude-3-5-sonnet-20241022"
+      "models": ["claude-opus-4-7-20260416", "claude-sonnet-4-6-20250217", "claude-haiku-4-5-20251001"],
+      "default": "claude-sonnet-4-6-20250217"
     },
     "zhipu": {
-      "models": ["glm-4.7", "glm-4.6", "glm-4.5", "glm-4.5-air", "glm-4-plus", "glm-4-flash", "glm-4"],
-      "default": "glm-4.7"
+      "models": ["glm-5", "glm-4.7", "glm-4.7-flash", "glm-4-plus", "glm-4-flash", "GLM-Z1-32B-0414"],
+      "default": "glm-4-flash"
     }
   }
 }
@@ -363,50 +365,49 @@ Content-Type: application/json
 
 | Provider | 环境变量 | 默认模型 | 说明 |
 |----------|----------|----------|------|
-| `zhipu` | `ZHIPU_API_KEY` | glm-4.7 | 智谱AI，推荐使用 |
+| `zhipu` | `ZHIPU_API_KEY` | glm-4-flash | 智谱AI，推荐使用 |
 | `deepseek` | `DEEPSEEK_API_KEY` | deepseek-chat | DeepSeek |
 | `openai` | `OPENAI_API_KEY` | gpt-4o | OpenAI |
-| `anthropic` | `ANTHROPIC_API_KEY` | claude-3-5-sonnet-20241022 | Anthropic Claude |
+| `anthropic` | `ANTHROPIC_API_KEY` | claude-sonnet-4-6-20250217 | Anthropic Claude |
 
 ### 3.5 各提供者支持的模型
 
 **智谱AI (zhipu)**:
 | 模型 | 说明 |
 |------|------|
-| glm-4.7 | 最新版，专注于代码生成和 Agent 任务（推理模型，输出包含思考过程） |
-| glm-4.6 | 增强推理和代码能力（推理模型） |
-| glm-4.5 | 旗舰版，355B 参数 MoE 架构（推理模型） |
-| glm-4.5-air | 轻量版，106B 参数 |
-| glm-4-plus | 增强版通用模型，推荐用于代码补全 |
-| glm-4-flash | 快速响应版本，推荐用于代码补全 |
-| glm-4 | 基础版 |
+| glm-5 | GLM-5 旗舰，744B/40B MoE，200K 上下文，开源 SOTA |
+| glm-4.7 | GLM-4.7 Agentic Coding 模型，SWE-bench 73.8% |
+| glm-4.7-flash | GLM-4.7 Flash 免费混合思考，MIT 开源 |
+| glm-4-plus | GLM-4 Plus 增强版通用模型 |
+| glm-4-flash | GLM-4 Flash 快速响应，免费调用 |
+| GLM-Z1-32B-0414 | GLM-Z1 推理模型 32B，极致性价比 |
 
 **DeepSeek**:
 | 模型 | 说明 |
 |------|------|
-| deepseek-chat | DeepSeek-V3.2 通用对话模型 |
+| deepseek-v4-pro | DeepSeek-V4 Pro，1.6T MoE，1M 上下文，旗舰推理与编码 |
+| deepseek-v4-flash | DeepSeek-V4 Flash，284B MoE，1M 上下文，高性价比 |
+| deepseek-chat | DeepSeek-V3.2 通用对话，128K 上下文 |
 | deepseek-reasoner | DeepSeek-V3.2 推理模型 |
 
 **OpenAI**:
 | 模型 | 说明 |
 |------|------|
-| gpt-4o | GPT-4 优化版，推荐使用 |
-| gpt-4o-mini | 轻量版 GPT-4o |
-| gpt-4-turbo | GPT-4 Turbo，支持 128K 上下文 |
-| gpt-4 | GPT-4 原版 |
-| gpt-3.5-turbo | GPT-3.5，速度快成本低 |
-| o1 | OpenAI o1 推理模型 |
-| o1-mini | 轻量版 o1 |
-| o1-preview | o1 预览版 |
+| gpt-5.4 | GPT-5.4 旗舰推理与编码模型 |
+| gpt-4.1 | GPT-4.1 最强非推理模型，1M 上下文 |
+| gpt-4.1-mini | GPT-4.1 Mini 轻量非推理模型 |
+| gpt-4o | GPT-4o 优化版，推荐使用 |
+| gpt-4o-mini | GPT-4o Mini 轻量快速版 |
+| gpt-4-turbo | GPT-4 Turbo，128K 上下文 |
+| o4-mini | OpenAI o4-mini 轻量推理模型 |
+| o3-pro | OpenAI o3-pro 深度推理模型 |
 
 **Anthropic**:
 | 模型 | 说明 |
 |------|------|
-| claude-3-5-sonnet-20241022 | Claude 3.5 Sonnet，最新版 |
-| claude-3-5-haiku-20241022 | Claude 3.5 Haiku，轻量快速 |
-| claude-3-opus-20240229 | Claude 3 Opus，最强能力 |
-| claude-3-sonnet-20240229 | Claude 3 Sonnet |
-| claude-3-haiku-20240307 | Claude 3 Haiku |
+| claude-opus-4-7-20260416 | Claude Opus 4.7 旗舰，87.6% SWE-bench，1M 上下文 |
+| claude-sonnet-4-6-20250217 | Claude Sonnet 4.6 主力，最佳性价比 |
+| claude-haiku-4-5-20251001 | Claude Haiku 4.5 轻量快速，200K 上下文 |
 
 ---
 
