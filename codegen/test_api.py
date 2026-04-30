@@ -128,7 +128,8 @@ class Runner:
                  (r.expected == "fail" and r.actual == Outcome.FAIL)
             icon = "✓" if ok else "✗"
             detail = f"  [{r.actual.value}] {r.message}" if r.message else ""
-            print(f"  {icon} {r.name:<40} {r.actual.value:<5} {r.duration:.1f}s{detail}")
+            t = f"{r.duration*1000:.0f}ms" if r.duration < 1 else f"{r.duration:.1f}s"
+            print(f"  {icon} {r.name:<40} {r.actual.value:<5} {t:>6}{detail}")
         self._summary()
 
     def run_one(self, name: str):
@@ -139,7 +140,8 @@ class Runner:
             print(f"No such test: {name}")
             sys.exit(1)
         r = self._run(func)
-        print(f"{r.name}: {r.actual.value} (expected {r.expected})")
+        t = f"{r.duration*1000:.0f}ms" if r.duration < 1 else f"{r.duration:.1f}s"
+        print(f"{r.name}: {r.actual.value} in {t}")
         if r.message:
             print(f"  {r.message}")
         sys.exit(0 if r.actual == Outcome.PASS else 1)
