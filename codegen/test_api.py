@@ -152,19 +152,12 @@ class Runner:
 
     def _summary(self):
         total = len(self.results)
-        exp_pass = sum(1 for r in self.results if r.expected == "pass")
-        exp_skip = sum(1 for r in self.results if r.expected == "skip")
-        exp_fail = sum(1 for r in self.results if r.expected == "fail")
-
         act = {o: sum(1 for r in self.results if r.actual == o) for o in Outcome}
-        mismatches = [r for r in self.results
-                      if not ((r.expected == "skip" and r.actual == Outcome.SKIP) or
-                              (r.expected != "skip" and r.actual == Outcome.PASS) or
-                              (r.expected == "fail" and r.actual == Outcome.FAIL))]
+        mismatches = [r for r in self.results if r.actual != Outcome.PASS]
 
         elapsed = time.time() - self._start
         print(f"\n{'='*64}")
-        print(f"Expected: {exp_pass}P  {exp_skip}S  {exp_fail}F")
+        print(f"Expected: {total}P")
         print(f"Actual:   {act.get(Outcome.PASS,0)}P  {act.get(Outcome.SKIP,0)}S  "
               f"{act.get(Outcome.FAIL,0)}F  {act.get(Outcome.ERROR,0)}E  ({elapsed:.1f}s)")
         if mismatches:
@@ -270,7 +263,7 @@ class Runner:
     # FIM — integration (needs DEEPSEEK_API_KEY)
     # ══════════════════════════════════════════════════════════
 
-    @expects("skip")
+    @expects("pass")
     def test_11_fim_minimal_request(self):
         """Minimal FIM request returns suggestion with text+label."""
         data = self._assert_ok(
@@ -282,7 +275,7 @@ class Runner:
         assert len(s["text"]) > 0
         assert len(s["label"]) > 0
 
-    @expects("skip")
+    @expects("pass")
     def test_12_fim_full_request(self):
         """Full FIM with includes, functions, max_tokens → 200 ok."""
         data = self._assert_ok(
@@ -296,7 +289,7 @@ class Runner:
         self._skip_on_api_fail(data, "FIM full")
         assert len(data["suggestion"]["text"]) > 0
 
-    @expects("skip")
+    @expects("pass")
     def test_13_fim_truncates_long_prompt(self):
         """Prompt > 4000 chars is handled without crash."""
         long_p = "int main() {\n" + "  // x\n" * 1000
@@ -305,7 +298,7 @@ class Runner:
                        {"prompt": long_p, "suffix": "\n}"}))
         self._skip_on_api_fail(data, "FIM long")
 
-    @expects("skip")
+    @expects("pass")
     def test_14_fim_truncates_many_includes(self):
         """20 includes → truncated to MAX_INCLUDES=10, still succeeds."""
         incs = [f"#include <h{i}.h>" for i in range(20)]
@@ -393,14 +386,14 @@ class Runner:
         self._skip_on_api_fail(data, "Chat")
         return data
 
-    @expects("skip")
+    @expects("pass")
     def test_23_chat_basic_completion(self):
         """Simple chat request returns text+model."""
         data = self._chat({"prompt": "def add(a,b):", "suffix": "\n    return a+b"})
         assert len(data["response"]["text"]) > 0
         assert "model" in data["response"]
 
-    @expects("skip")
+    @expects("pass")
     def test_24_chat_with_full_context(self):
         """Chat with includes, functions, model, max_tokens → ok."""
         data = self._chat({
@@ -411,7 +404,7 @@ class Runner:
         }, model="deepseek-chat", max_tokens=200)
         assert data["response"]["model"] == "deepseek-chat"
 
-    @expects("skip")
+    @expects("pass")
     def test_25_chat_python_completion(self):
         """Python fib() completion returns valid code."""
         data = self._chat({
@@ -420,7 +413,7 @@ class Runner:
         })
         assert len(data["response"]["text"]) > 5
 
-    @expects("skip")
+    @expects("pass")
     def test_26_chat_cpp_completion(self):
         """C++ main() completion returns valid code."""
         data = self._chat({
@@ -429,7 +422,7 @@ class Runner:
         })
         assert len(data["response"]["text"]) > 5
 
-    @expects("skip")
+    @expects("pass")
     def test_27_chat_unicode_handling(self):
         """Unicode + emoji in prompt doesn't break."""
         data = self._chat({
@@ -438,7 +431,7 @@ class Runner:
         })
         assert len(data["response"]["text"]) > 0
 
-    @expects("skip")
+    @expects("pass")
     def test_28_chat_truncates_long_input(self):
         """Very long prompt doesn't crash."""
         long_p = "def test():\n" + "    x = 1\n" * 1000
@@ -449,21 +442,21 @@ class Runner:
     # RAG — falls back without index
     # ══════════════════════════════════════════════════════════
 
-    @expects("skip")
+    @expects("pass")
     def test_29_rag_enabled(self):
         """use_rag=true falls back when no index exists."""
         data = self._chat({"prompt": "def hello():", "suffix": ""},
                           use_rag=True, use_graph_rag=False)
         assert len(data["response"]["text"]) > 0
 
-    @expects("skip")
+    @expects("pass")
     def test_30_graph_rag_enabled(self):
         """use_graph_rag=true falls back when no index exists."""
         data = self._chat({"prompt": "def hello():", "suffix": ""},
                           use_rag=True, use_graph_rag=True)
         assert len(data["response"]["text"]) > 0
 
-    @expects("skip")
+    @expects("pass")
     def test_31_rag_project_path_isolation(self):
         """Nonexistent project_path doesn't break request."""
         data = self._chat({"prompt": "def process():", "suffix": ""},
@@ -481,7 +474,7 @@ class Runner:
         resp = self._post(f"{self.base_url}/api/v1/chat", {"context": {}})
         assert resp.status_code in (200, 400)
 
-    @expects("skip")
+    @expects("pass")
     def test_33_multiple_sequential(self):
         """3 identical requests all succeed."""
         body = {"prompt": "int main() {\n  ", "suffix": "\n}"}
@@ -509,10 +502,7 @@ def main():
     else:
         r.run_all()
 
-    mismatches = [res for res in r.results
-                  if not ((res.expected == "skip" and res.actual == Outcome.SKIP) or
-                          (res.expected != "skip" and res.actual == Outcome.PASS) or
-                          (res.expected == "fail" and res.actual == Outcome.FAIL))]
+    mismatches = [res for res in r.results if res.actual != Outcome.PASS]
     if mismatches:
         sys.exit(1)
 
