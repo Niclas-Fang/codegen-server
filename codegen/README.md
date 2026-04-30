@@ -161,8 +161,8 @@ export LSP_FALLBACK_COMMANDS="clangd,ccls"  # tried in order
 | `LSP_COMMAND` | No | `clangd` | Language Server command |
 | `LSP_FALLBACK_COMMANDS` | No | `clangd,ccls` | LSP fallback commands (comma-separated) |
 | `LSP_ARGS` | No | - | Additional arguments for Language Server |
-| `DJANGO_DEBUG` | No | `false` | Enable Django debug mode |
-| `DJANGO_SECRET_KEY` | Yes* | - | Django secret key (required in production) |
+| `DJANGO_DEBUG` | No | `true` | Set to `false` for production |
+| `DJANGO_SECRET_KEY` | No | auto-generated | Required only when `DJANGO_DEBUG=false` |
 | `DJANGO_ALLOWED_HOSTS` | No | `localhost,127.0.0.1` | Comma-separated allowed hosts |
 | `DJANGO_LOG_LEVEL` | No | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
 | `CORS_ALLOWED_ORIGIN` | No | `*` (debug) / `` (production) | CORS allowed origin |

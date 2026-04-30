@@ -7,14 +7,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ── security ────────────────────────────────────────────────
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "")
-if not SECRET_KEY:
-    if os.getenv("DJANGO_DEBUG", "").lower() == "true":
-        SECRET_KEY = "django-insecure-dev-only-change-in-production"
-    else:
-        raise ValueError("DJANGO_SECRET_KEY environment variable is required in production")
+DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() == "true"
 
-DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() == "true"
+_django_secret = os.getenv("DJANGO_SECRET_KEY", "")
+if _django_secret:
+    SECRET_KEY = _django_secret
+elif DEBUG:
+    SECRET_KEY = "django-insecure-dev-only-change-in-production"
+else:
+    raise ValueError("DJANGO_SECRET_KEY is required when DJANGO_DEBUG=false")
 
 ALLOWED_HOSTS = [
     h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()
