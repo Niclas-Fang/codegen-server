@@ -256,7 +256,6 @@ pixi run python -m completion.rag.indexer index <代码目录>  # 构建索引
 
 - [API文档.md](API文档.md) - 完整 API 规范
 - [README.md](README.md) - 英文版 README
-- [AGENTS.md](AGENTS.md) - AI 代理开发指南
 - [CLAUDE.md](CLAUDE.md) - Claude Code 项目说明
 - [examples/](examples/) - FIM 和 RAG 使用示例
 

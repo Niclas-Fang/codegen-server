@@ -265,7 +265,6 @@ pixi run python -m completion.rag.indexer index <code-directory>
 
 - [API文档.md](API文档.md) - Complete API specification (Chinese)
 - [README-zh.md](README-zh.md) - Chinese translation of this README
-- [AGENTS.md](AGENTS.md) - Development guide for AI agents
 - [CLAUDE.md](CLAUDE.md) - Claude Code project instructions
 - [examples/](examples/) - FIM and RAG usage examples
 
