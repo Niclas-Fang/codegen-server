@@ -49,16 +49,16 @@
       }
     },
     "openai": {
-      "models": ["gpt-5.4", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o4-mini", "o3-pro"],
-      "default": "gpt-4o"
+      "models": ["gpt-5.5", "gpt-5.4"],
+      "default": "gpt-5.4"
     },
     "anthropic": {
-      "models": ["claude-opus-4-7-20260416", "claude-sonnet-4-6-20250217", "claude-haiku-4-5-20251001"],
+      "models": ["claude-opus-4-7-20260416", "claude-sonnet-4-6-20250217"],
       "default": "claude-sonnet-4-6-20250217"
     },
     "zhipu": {
-      "models": ["glm-5", "glm-4.7", "glm-4.7-flash", "glm-4-plus", "glm-4-flash", "GLM-Z1-32B-0414"],
-      "default": "glm-4-flash"
+      "models": ["glm-5.1", "glm-5"],
+      "default": "glm-5"
     }
   }
 }
@@ -365,9 +365,9 @@ Content-Type: application/json
 
 | Provider | 环境变量 | 默认模型 | 说明 |
 |----------|----------|----------|------|
-| `zhipu` | `ZHIPU_API_KEY` | glm-4-flash | 智谱AI，推荐使用 |
+| `zhipu` | `ZHIPU_API_KEY` | glm-5 | 智谱AI，推荐使用 |
 | `deepseek` | `DEEPSEEK_API_KEY` | deepseek-chat | DeepSeek |
-| `openai` | `OPENAI_API_KEY` | gpt-4o | OpenAI |
+| `openai` | `OPENAI_API_KEY` | gpt-5.4 | OpenAI |
 | `anthropic` | `ANTHROPIC_API_KEY` | claude-sonnet-4-6-20250217 | Anthropic Claude |
 
 ### 3.5 各提供者支持的模型
@@ -375,12 +375,8 @@ Content-Type: application/json
 **智谱AI (zhipu)**:
 | 模型 | 说明 |
 |------|------|
+| glm-5.1 | GLM-5.1 全自治 Agent，8h 自主工作，SWE-Bench Pro 58.4 |
 | glm-5 | GLM-5 旗舰，744B/40B MoE，200K 上下文，开源 SOTA |
-| glm-4.7 | GLM-4.7 Agentic Coding 模型，SWE-bench 73.8% |
-| glm-4.7-flash | GLM-4.7 Flash 免费混合思考，MIT 开源 |
-| glm-4-plus | GLM-4 Plus 增强版通用模型 |
-| glm-4-flash | GLM-4 Flash 快速响应，免费调用 |
-| GLM-Z1-32B-0414 | GLM-Z1 推理模型 32B，极致性价比 |
 
 **DeepSeek**:
 | 模型 | 说明 |
@@ -393,21 +389,14 @@ Content-Type: application/json
 **OpenAI**:
 | 模型 | 说明 |
 |------|------|
-| gpt-5.4 | GPT-5.4 旗舰推理与编码模型 |
-| gpt-4.1 | GPT-4.1 最强非推理模型，1M 上下文 |
-| gpt-4.1-mini | GPT-4.1 Mini 轻量非推理模型 |
-| gpt-4o | GPT-4o 优化版，推荐使用 |
-| gpt-4o-mini | GPT-4o Mini 轻量快速版 |
-| gpt-4-turbo | GPT-4 Turbo，128K 上下文 |
-| o4-mini | OpenAI o4-mini 轻量推理模型 |
-| o3-pro | OpenAI o3-pro 深度推理模型 |
+| gpt-5.5 | GPT-5.5 旗舰推理与编码模型，1M 上下文，82.7% Terminal-Bench |
+| gpt-5.4 | GPT-5.4 高性能推理模型，1M 上下文 |
 
 **Anthropic**:
 | 模型 | 说明 |
 |------|------|
 | claude-opus-4-7-20260416 | Claude Opus 4.7 旗舰，87.6% SWE-bench，1M 上下文 |
 | claude-sonnet-4-6-20250217 | Claude Sonnet 4.6 主力，最佳性价比 |
-| claude-haiku-4-5-20251001 | Claude Haiku 4.5 轻量快速，200K 上下文 |
 
 ---
 
