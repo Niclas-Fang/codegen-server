@@ -67,8 +67,8 @@ class Runner:
     def _get(self, url: str, timeout: int = 5) -> requests.Response:
         return requests.get(url, timeout=timeout)
 
-    def _options(self, url: str, timeout: int = 2) -> requests.Response:
-        return requests.options(url, timeout=timeout)
+    def _options(self, url: str, headers: dict | None = None, timeout: int = 2) -> requests.Response:
+        return requests.options(url, headers=headers, timeout=timeout)
 
     def _assert_ok(self, resp: requests.Response, status: int = 200) -> dict:
         assert resp.status_code == status, f"want {status}, got {resp.status_code}"
@@ -83,7 +83,7 @@ class Runner:
         assert data["error_code"] == code, f"want {code}, got {data.get('error_code')}"
         return data
 
-    def _skip_on_api_fail(self, data: dict, label: str):
+    def _skip_on_api_fail(self, data: dict):
         if not data.get("success"):
             raise SkipTest(f"{data.get('error_code','?')}: {data.get('error','')[:80]}")
 
@@ -272,7 +272,7 @@ class Runner:
             self._post(f"{self.base_url}/api/v1/completion",
                        {"prompt": "int main() {\n  int a=10;\n  ",
                         "suffix": "\n  return 0;\n}"}))
-        self._skip_on_api_fail(data, "FIM")
+        self._skip_on_api_fail(data)
         s = data["suggestion"]
         assert len(s["text"]) > 0
         assert len(s["label"]) > 0
@@ -288,7 +288,7 @@ class Runner:
                 "other_functions": [{"name": "f", "signature": "void f()"}],
                 "max_tokens": 100,
             }))
-        self._skip_on_api_fail(data, "FIM full")
+        self._skip_on_api_fail(data)
         assert len(data["suggestion"]["text"]) > 0
 
     @expects("pass")
@@ -298,7 +298,7 @@ class Runner:
         data = self._assert_ok(
             self._post(f"{self.base_url}/api/v1/completion",
                        {"prompt": long_p, "suffix": "\n}"}))
-        self._skip_on_api_fail(data, "FIM long")
+        self._skip_on_api_fail(data)
 
     @expects("pass")
     def test_14_fim_truncates_many_includes(self):
@@ -307,7 +307,7 @@ class Runner:
         data = self._assert_ok(
             self._post(f"{self.base_url}/api/v1/completion",
                        {"prompt": "int main() {\n  ", "suffix": "\n}", "includes": incs}))
-        self._skip_on_api_fail(data, "FIM includes")
+        self._skip_on_api_fail(data)
 
     # ══════════════════════════════════════════════════════════
     # CHAT — error cases
@@ -385,7 +385,7 @@ class Runner:
         resp = self._post(f"{self.base_url}/api/v1/chat",
                           {"context": ctx, "provider": "deepseek", **kw}, timeout=30)
         data = self._assert_ok(resp)
-        self._skip_on_api_fail(data, "Chat")
+        self._skip_on_api_fail(data)
         return data
 
     @expects("pass")
@@ -467,17 +467,108 @@ class Runner:
         assert len(data["response"]["text"]) > 0
 
     # ══════════════════════════════════════════════════════════
+    # HEALTH — detail
+    # ══════════════════════════════════════════════════════════
+
+    @expects("pass")
+    def test_32_health_lists_four_providers(self):
+        """Health endpoint reports all 4 providers with configured flag."""
+        data = self._assert_ok(self._get(f"{self.base_url}/api/v1/health"))
+        for p in ["deepseek", "openai", "anthropic", "zhipu"]:
+            assert p in data["providers"], f"missing {p}"
+            assert "configured" in data["providers"][p]
+            assert "default_model" in data["providers"][p]
+
+    # ══════════════════════════════════════════════════════════
+    # MODELS — detail
+    # ══════════════════════════════════════════════════════════
+
+    @expects("pass")
+    def test_33_models_have_descriptions(self):
+        """Every model has a description string."""
+        data = self._assert_ok(self._get(f"{self.base_url}/api/v1/models"))
+        for p, info in data["models"].items():
+            for m in info["models"]:
+                assert m in info["description"], f"{p}/{m} missing description"
+                assert len(info["description"][m]) > 10
+
+    @expects("pass")
+    def test_34_models_defaults_are_valid(self):
+        """Provider defaults exist in their model list."""
+        data = self._assert_ok(self._get(f"{self.base_url}/api/v1/models"))
+        for p, info in data["models"].items():
+            assert info["default"] in info["models"], f"{p} default {info['default']} not in list"
+
+    # ══════════════════════════════════════════════════════════
+    # FIM — more coverage
+    # ══════════════════════════════════════════════════════════
+
+    @expects("pass")
+    def test_35_fim_response_structure(self):
+        """FIM response has text, label with correct types."""
+        data = self._assert_ok(
+            self._post(f"{self.base_url}/api/v1/completion",
+                       {"prompt": "int x = ", "suffix": ";\n"}))
+        self._skip_on_api_fail(data)
+        s = data["suggestion"]
+        assert isinstance(s["text"], str)
+        assert isinstance(s["label"], str)
+        assert len(s["text"]) <= 500  # max response length
+
+    @expects("pass")
+    def test_36_fim_respects_max_tokens(self):
+        """Small max_tokens yields short response."""
+        data = self._assert_ok(
+            self._post(f"{self.base_url}/api/v1/completion",
+                       {"prompt": "int main() {\n  int a=10;\n  ", "suffix": "\n  return 0;\n}",
+                        "max_tokens": 20}))
+        self._skip_on_api_fail(data)
+        # With 20 max_tokens the response should be short
+        assert len(data["suggestion"]["text"]) < 200
+
+    @expects("pass")
+    def test_37_fim_handles_only_prompt(self):
+        """minimal prompt with empty suffix still works."""
+        data = self._assert_ok(
+            self._post(f"{self.base_url}/api/v1/completion",
+                       {"prompt": "def foo():", "suffix": ""}))
+        self._skip_on_api_fail(data)
+
+    # ══════════════════════════════════════════════════════════
+    # CORS — detail
+    # ══════════════════════════════════════════════════════════
+
+    @expects("pass")
+    def test_38_cors_preflight_returns_headers(self):
+        """CORS preflight with Origin returns allow-origin header."""
+        headers = {
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "Content-Type",
+        }
+        resp = self._options(f"{self.base_url}/api/v1/completion", headers=headers)
+        assert resp.status_code == 200
+        assert resp.headers.get("Access-Control-Allow-Origin") is not None
+
+    @expects("pass")
+    def test_39_cors_on_error_responses(self):
+        """Even 400 errors include CORS headers."""
+        resp = self._post(f"{self.base_url}/api/v1/completion",
+                          {"prompt": "test", "suffix": "test"})
+        assert "access-control-allow-origin" in resp.headers
+
+    # ══════════════════════════════════════════════════════════
     # BOUNDARY
     # ══════════════════════════════════════════════════════════
 
     @expects("pass")
-    def test_32_chat_empty_context_accepted(self):
+    def test_40_chat_empty_context_accepted(self):
         """Empty context {} returns 200 or 400 (implementation choice)."""
         resp = self._post(f"{self.base_url}/api/v1/chat", {"context": {}})
         assert resp.status_code in (200, 400)
 
     @expects("pass")
-    def test_33_multiple_sequential(self):
+    def test_41_multiple_sequential(self):
         """3 identical requests all succeed."""
         body = {"prompt": "int main() {\n  ", "suffix": "\n}"}
         for i in range(3):
@@ -485,6 +576,26 @@ class Runner:
             assert resp.status_code == 200
             if not resp.json().get("success"):
                 raise SkipTest(f"request {i+1} failed — API unavailable")
+
+    @expects("pass")
+    def test_42_chat_missing_prompt_defaults_ok(self):
+        """Chat without prompt in context doesn't crash."""
+        resp = self._post(f"{self.base_url}/api/v1/chat", {
+            "context": {"suffix": "\n}"},
+            "provider": "deepseek",
+        }, timeout=15)
+        assert resp.status_code in (200, 400)
+
+    @expects("pass")
+    def test_43_chat_zhipu_provider(self):
+        """Chat with zhipu provider (if key configured)."""
+        resp = self._post(f"{self.base_url}/api/v1/chat", {
+            "context": {"prompt": "def add(a,b):", "suffix": "\n    return a+b"},
+            "provider": "zhipu",
+        }, timeout=15)
+        data = self._assert_ok(resp)
+        self._skip_on_api_fail(data)
+        assert len(data["response"]["text"]) > 0
 
 
 # ── main ─────────────────────────────────────────────────────
