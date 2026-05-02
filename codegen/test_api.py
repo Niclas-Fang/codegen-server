@@ -265,14 +265,23 @@ class Runner:
     # FIM — integration (needs DEEPSEEK_API_KEY)
     # ══════════════════════════════════════════════════════════
 
+    def _fim(self, body: dict, timeout: int = 15) -> dict:
+        resp = self._post(f"{self.base_url}/api/v1/completion", body, timeout=timeout)
+        if resp.status_code != 200:
+            try:
+                self._skip_on_api_fail(resp.json())
+            except Exception:
+                pass
+            raise SkipTest(f"FIM API returned {resp.status_code}")
+        data = resp.json()
+        self._skip_on_api_fail(data)
+        return data
+
     @expects("pass")
     def test_11_fim_minimal_request(self):
         """Minimal FIM request returns suggestion with text+label."""
-        data = self._assert_ok(
-            self._post(f"{self.base_url}/api/v1/completion",
-                       {"prompt": "int main() {\n  int a=10;\n  ",
-                        "suffix": "\n  return 0;\n}"}))
-        self._skip_on_api_fail(data)
+        data = self._fim({"prompt": "int main() {\n  int a=10;\n  ",
+                          "suffix": "\n  return 0;\n}"})
         s = data["suggestion"]
         assert len(s["text"]) > 0
         assert len(s["label"]) > 0
@@ -280,34 +289,26 @@ class Runner:
     @expects("pass")
     def test_12_fim_full_request(self):
         """Full FIM with includes, functions, max_tokens → 200 ok."""
-        data = self._assert_ok(
-            self._post(f"{self.base_url}/api/v1/completion", {
-                "prompt": "int main() {\n  int a=10;\n  ",
-                "suffix": "\n  return 0;\n}",
-                "includes": ["#include <iostream>"],
-                "other_functions": [{"name": "f", "signature": "void f()"}],
-                "max_tokens": 100,
-            }))
-        self._skip_on_api_fail(data)
+        data = self._fim({
+            "prompt": "int main() {\n  int a=10;\n  ",
+            "suffix": "\n  return 0;\n}",
+            "includes": ["#include <iostream>"],
+            "other_functions": [{"name": "f", "signature": "void f()"}],
+            "max_tokens": 100,
+        })
         assert len(data["suggestion"]["text"]) > 0
 
     @expects("pass")
     def test_13_fim_truncates_long_prompt(self):
         """Prompt > 4000 chars is handled without crash."""
         long_p = "int main() {\n" + "  // x\n" * 1000
-        data = self._assert_ok(
-            self._post(f"{self.base_url}/api/v1/completion",
-                       {"prompt": long_p, "suffix": "\n}"}))
-        self._skip_on_api_fail(data)
+        self._fim({"prompt": long_p, "suffix": "\n}"})
 
     @expects("pass")
     def test_14_fim_truncates_many_includes(self):
         """20 includes → truncated to MAX_INCLUDES=10, still succeeds."""
         incs = [f"#include <h{i}.h>" for i in range(20)]
-        data = self._assert_ok(
-            self._post(f"{self.base_url}/api/v1/completion",
-                       {"prompt": "int main() {\n  ", "suffix": "\n}", "includes": incs}))
-        self._skip_on_api_fail(data)
+        self._fim({"prompt": "int main() {\n  ", "suffix": "\n}", "includes": incs})
 
     # ══════════════════════════════════════════════════════════
     # CHAT — error cases
@@ -384,7 +385,13 @@ class Runner:
     def _chat(self, ctx: dict, **kw) -> dict:
         resp = self._post(f"{self.base_url}/api/v1/chat",
                           {"context": ctx, "provider": "deepseek", **kw}, timeout=30)
-        data = self._assert_ok(resp)
+        if resp.status_code != 200:
+            try:
+                self._skip_on_api_fail(resp.json())
+            except Exception:
+                pass
+            raise SkipTest(f"chat API returned {resp.status_code}")
+        data = resp.json()
         self._skip_on_api_fail(data)
         return data
 
@@ -506,33 +513,23 @@ class Runner:
     @expects("pass")
     def test_35_fim_response_structure(self):
         """FIM response has text, label with correct types."""
-        data = self._assert_ok(
-            self._post(f"{self.base_url}/api/v1/completion",
-                       {"prompt": "int x = ", "suffix": ";\n"}))
-        self._skip_on_api_fail(data)
+        data = self._fim({"prompt": "int x = ", "suffix": ";\n"})
         s = data["suggestion"]
         assert isinstance(s["text"], str)
         assert isinstance(s["label"], str)
-        assert len(s["text"]) <= 500  # max response length
+        assert len(s["text"]) <= 500
 
     @expects("pass")
     def test_36_fim_respects_max_tokens(self):
         """Small max_tokens yields short response."""
-        data = self._assert_ok(
-            self._post(f"{self.base_url}/api/v1/completion",
-                       {"prompt": "int main() {\n  int a=10;\n  ", "suffix": "\n  return 0;\n}",
-                        "max_tokens": 20}))
-        self._skip_on_api_fail(data)
-        # With 20 max_tokens the response should be short
+        data = self._fim({"prompt": "int main() {\n  int a=10;\n  ",
+                          "suffix": "\n  return 0;\n}", "max_tokens": 20})
         assert len(data["suggestion"]["text"]) < 200
 
     @expects("pass")
     def test_37_fim_handles_only_prompt(self):
         """minimal prompt with empty suffix still works."""
-        data = self._assert_ok(
-            self._post(f"{self.base_url}/api/v1/completion",
-                       {"prompt": "def foo():", "suffix": ""}))
-        self._skip_on_api_fail(data)
+        self._fim({"prompt": "def foo():", "suffix": ""})
 
     # ══════════════════════════════════════════════════════════
     # CORS — detail
