@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Pre-commit hook — validates Python syntax on staged files.
+
+staged_py=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' | grep -v __pycache__)
+if [ -z "$staged_py" ]; then
+    exit 0
+fi
+
+echo ">>> Checking Python syntax..."
+TOPLEVEL=$(git rev-parse --show-toplevel)
+cd "$TOPLEVEL"
+for f in $staged_py; do
+    python3 -c "import ast; ast.parse(open('$TOPLEVEL/$f').read())" || {
+        echo "Syntax error in $f"
+        exit 1
+    }
+done
+echo ">>> Syntax OK. Run 'pixi run test' for full suite."
+exit 0
