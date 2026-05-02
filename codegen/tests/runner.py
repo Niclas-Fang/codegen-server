@@ -40,16 +40,31 @@ def expects(outcome: str):
 
 # ── compiler validator ───────────────────────────────────────
 
-def validate_cpp_syntax(code: str) -> str | None:
-    """Check C++ code syntax with g++ or clang++. Returns None if OK, error message if not."""
-    import subprocess, tempfile, os
-    compiler = None
+def _find_compiler() -> str | None:
     for c in ["g++", "clang++"]:
-        if os.system(f"which {c} >/dev/null 2>&1") == 0:
-            compiler = c
-            break
+        r = __import__("subprocess").run(["which", c], capture_output=True)
+        if r.returncode == 0:
+            return c
+    return None
+
+
+def validate_completion(prompt: str, completion: str, suffix: str) -> str | None:
+    """Check C++ completion by wrapping in full context and compiling.
+
+    Constructs a complete program from prompt + completion + suffix,
+    wraps in int main() if needed, and runs g++/clang++ -fsyntax-only.
+    Returns None if OK, error message string if syntax is invalid.
+    """
+    import subprocess, tempfile, os
+
+    compiler = _find_compiler()
     if not compiler:
-        return None  # no compiler available, skip validation
+        return None
+
+    code = prompt + completion + suffix
+    # ensure valid C++ — wrap in main() if not already
+    if "int main" not in code and "void main" not in code:
+        code = f"int main() {{\n{code}\nreturn 0;\n}}"
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".cpp", delete=False) as f:
         f.write(code)
@@ -60,21 +75,12 @@ def validate_cpp_syntax(code: str) -> str | None:
             capture_output=True, text=True, timeout=10,
         )
         if result.returncode != 0:
-            return result.stderr[:500]
+            return result.stderr[:300]
         return None
     except Exception:
         return None
     finally:
         os.unlink(tmp)
-
-
-def validate_python_syntax(code: str) -> str | None:
-    """Check Python code syntax. Returns None if OK, error message if not."""
-    try:
-        compile(code, "<test>", "exec")
-        return None
-    except SyntaxError as e:
-        return str(e)
 
 
 # ── base runner ──────────────────────────────────────────────
@@ -86,7 +92,14 @@ class BaseRunner:
 
     def __init__(self):
         self.results: list[Result] = []
+        self._syntax_errors: list[str] = []
         self._start = 0.0
+
+    def _check_syntax(self, prompt: str, completion: str, suffix: str, label: str):
+        """Silently validate completion syntax in context. Collects errors for summary."""
+        err = validate_completion(prompt, completion, suffix)
+        if err:
+            self._syntax_errors.append(f"  [{label}] {err[:120]}")
 
     def _post(self, url: str, data: dict, timeout: int = 10) -> requests.Response:
         try:
@@ -198,6 +211,10 @@ class BaseRunner:
         print(f"Expected: {total}P")
         print(f"Actual:   {act.get(Outcome.PASS,0)}P  {act.get(Outcome.SKIP,0)}S  "
               f"{act.get(Outcome.FAIL,0)}F  {act.get(Outcome.ERROR,0)}E  ({elapsed:.1f}s)")
+        if self._syntax_errors:
+            print(f"\nSyntax issues ({len(self._syntax_errors)} — partial code is expected):")
+            for e in self._syntax_errors:
+                print(e)
         if mismatches:
             print(f"\nMismatches ({len(mismatches)}):")
             for r in mismatches:

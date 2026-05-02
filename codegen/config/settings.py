@@ -123,6 +123,9 @@ LOGGING = {
         },
     },
     "loggers": {
+        "sentence_transformers": {
+            "level": "WARNING",
+        },
         "django.request": {
             "handlers": ["console"],
             "level": "ERROR",

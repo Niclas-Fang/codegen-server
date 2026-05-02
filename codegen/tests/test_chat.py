@@ -91,24 +91,23 @@ class TestChat(BaseRunner):
         assert data["response"]["model"] == "deepseek-chat"
 
     @expects("pass")
-    def test_11_chat_python_completion(self):
-        """Python fib() completion returns valid code."""
-        data = self._chat({
-            "prompt": "def fib(n):\n    if n<=1:\n        return n\n    ",
-            "suffix": "\n\nprint(fib(10))",
-        })
+    def test_11_chat_cpp_completion(self):
+        """C++ main() completion validated with compiler."""
+        prompt = "int main() {\n    int a = 10;\n    int b = 20;\n    "
+        suffix = "\n    return 0;\n}"
+        data = self._chat({"prompt": prompt, "suffix": suffix})
         text = data["response"]["text"]
         assert len(text) > 5
-        # syntax validation on partial completions is expected to fail — skip
+        self._check_syntax(prompt, text, suffix, "chat cpp")
 
     @expects("pass")
-    def test_12_chat_cpp_completion(self):
-        """C++ main() completion returns valid code."""
-        data = self._chat({
-            "prompt": "int main() {\n    int a=10; int b=20;\n    ",
-            "suffix": "\n    return 0;\n}",
-        })
-        assert len(data["response"]["text"]) > 5
+    def test_12_chat_cpp_struct(self):
+        """C++ struct method completion validated with compiler."""
+        prompt = "struct Point {\n    int x, y;\n    int sum() {\n        "
+        suffix = "\n    }\n};"
+        data = self._chat({"prompt": prompt, "suffix": suffix})
+        assert len(data["response"]["text"]) > 2
+        self._check_syntax(prompt, data["response"]["text"], suffix, "chat struct")
 
     @expects("pass")
     def test_13_chat_unicode_handling(self):

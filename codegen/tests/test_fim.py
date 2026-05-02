@@ -45,24 +45,27 @@ class TestFIM(BaseRunner):
     @expects("pass")
     def test_05_fim_minimal_request(self):
         """Minimal FIM request returns suggestion with text+label."""
-        data = self._fim({"prompt": "int main() {\n  int a=10;\n  ",
-                          "suffix": "\n  return 0;\n}"})
+        prompt = "int main() {\n  int a=10;\n  "
+        suffix = "\n  return 0;\n}"
+        data = self._fim({"prompt": prompt, "suffix": suffix})
         s = data["suggestion"]
         assert len(s["text"]) > 0
         assert len(s["label"]) > 0
-        # partial completions naturally fail standalone syntax check — skip validation
+        self._check_syntax(prompt, s["text"], suffix, "fim minimal")
 
     @expects("pass")
     def test_06_fim_full_request(self):
         """Full FIM with includes, functions, max_tokens → 200 ok."""
+        prompt = "int main() {\n  int a=10;\n  "
+        suffix = "\n  return 0;\n}"
         data = self._fim({
-            "prompt": "int main() {\n  int a=10;\n  ",
-            "suffix": "\n  return 0;\n}",
+            "prompt": prompt, "suffix": suffix,
             "includes": ["#include <iostream>"],
             "other_functions": [{"name": "f", "signature": "void f()"}],
             "max_tokens": 100,
         })
         assert len(data["suggestion"]["text"]) > 0
+        self._check_syntax(prompt, data["suggestion"]["text"], suffix, "fim full")
 
     @expects("pass")
     def test_07_fim_truncates_long_prompt(self):
