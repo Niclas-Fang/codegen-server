@@ -13,10 +13,11 @@ DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() == "true"
 _django_secret = os.getenv("DJANGO_SECRET_KEY", "")
 if _django_secret:
     SECRET_KEY = _django_secret
-elif DEBUG:
-    SECRET_KEY = secrets.token_urlsafe(50)
 else:
-    raise ValueError("DJANGO_SECRET_KEY is required when DJANGO_DEBUG=false")
+    SECRET_KEY = secrets.token_urlsafe(50)
+    if not DEBUG:
+        import warnings
+        warnings.warn("DJANGO_SECRET_KEY not set — using random key. Set it for production.")
 
 ALLOWED_HOSTS = [
     h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()
