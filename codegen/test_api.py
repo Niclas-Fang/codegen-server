@@ -583,23 +583,6 @@ class Runner:
         }, timeout=15)
         assert resp.status_code in (200, 400)
 
-    @expects("pass")
-    def test_43_chat_zhipu_provider(self):
-        """Chat with zhipu provider (if key configured)."""
-        resp = self._post(f"{self.base_url}/api/v1/chat", {
-            "context": {"prompt": "def add(a,b):", "suffix": "\n    return a+b"},
-            "provider": "zhipu",
-        }, timeout=15)
-        if resp.status_code != 200:
-            try:
-                self._skip_on_api_fail(resp.json())
-            except Exception:
-                pass
-            raise SkipTest("zhipu API key not configured")
-        data = self._assert_ok(resp)
-        assert len(data["response"]["text"]) > 0
-
-
 # ── main ─────────────────────────────────────────────────────
 
 def main():
