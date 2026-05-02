@@ -1,6 +1,7 @@
 """Django settings for codegen-server — production-ready."""
 
 import os
+import secrets
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -13,7 +14,7 @@ _django_secret = os.getenv("DJANGO_SECRET_KEY", "")
 if _django_secret:
     SECRET_KEY = _django_secret
 elif DEBUG:
-    SECRET_KEY = "django-insecure-dev-only-change-in-production"
+    SECRET_KEY = secrets.token_urlsafe(50)
 else:
     raise ValueError("DJANGO_SECRET_KEY is required when DJANGO_DEBUG=false")
 
