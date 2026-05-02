@@ -14,7 +14,7 @@ from pathlib import Path
 
 from completion.rag.chunker import CodeChunker
 from completion.rag.vector_store import get_vector_store, clear_store_cache
-from completion.rag.retriever import retrieve_relevant_code, format_retrieval_context
+from completion.rag.retriever import retrieve_relevant_code
 from completion.rag.graph_store import get_graph_store, clear_graph_store_cache
 from completion.rag.code_parser import parse_file_with_lsp
 from completion.rag.config import get_vector_store_dir, LSP_COMMAND, LSP_FALLBACK_COMMANDS
@@ -214,9 +214,6 @@ def build_index(directory: Path, project_path: str = "", verbose: bool = True, i
     
     if total_entities > 0 or total_relations > 0:
         graph_store._save_graph()
-    
-    # Also add chunks to graph store's vector store (same as main vector store)
-    graph_store.add_chunks_to_vector_store(all_chunks)
 
     if verbose:
         store_dir = get_vector_store_dir(project_path)
@@ -227,11 +224,6 @@ def build_index(directory: Path, project_path: str = "", verbose: bool = True, i
         print(f"Index saved to: {store_dir}")
 
     return total_indexed
-
-
-def index_directory(directory: Path, project_path: str = "", verbose: bool = True) -> int:
-    """Alias for build_index for backwards compatibility"""
-    return build_index(directory, project_path=project_path, verbose=verbose)
 
 
 def clear_index(project_path: str = "", verbose: bool = True):

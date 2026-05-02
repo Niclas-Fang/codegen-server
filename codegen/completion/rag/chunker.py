@@ -84,7 +84,6 @@ Code chunker for RAG - splits code files into manageable chunks
 import re
 from pathlib import Path
 from typing import List, Iterator, Optional
-from .chunker import Document, Chunk
 from .config import CHUNK_SIZE, CHUNK_OVERLAP, CODE_EXTENSIONS, EXCLUDE_DIRS
 
 

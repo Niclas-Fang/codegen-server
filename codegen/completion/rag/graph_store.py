@@ -9,40 +9,38 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 
 from .code_parser import CodeEntity, CodeRelation
-from .config import get_vector_store_dir, EMBEDDING_MODEL
-from .vector_store import VectorStore
+from .config import get_vector_store_dir
 
 
 class GraphStore:
     """
-    Hybrid graph + vector store for Graph-RAG.
-    
-    Uses NetworkX for graph structure (entities and relations)
-    and FAISS vector store for semantic similarity search.
+    Code knowledge graph using NetworkX.
+
+    Uses NetworkX for graph structure (entities and relations).
+    Vector search is delegated to the shared get_vector_store() singleton.
     """
-    
-    def __init__(self, project_path: str = ""):
+
+    def __init__(self, project_path: str = "", vector_store=None):
         self.project_path = project_path
         self._graph = None
-        self._vector_store: Optional[VectorStore] = None
         self._graph_path = self._get_graph_path()
         self._entity_map: Dict[str, dict] = {}  # name -> entity data
-    
+        # reuse the global vector store singleton for this project
+        if vector_store is not None:
+            self.vector_store = vector_store
+        else:
+            from .vector_store import get_vector_store
+            self.vector_store = get_vector_store(project_path)
+
     def _get_graph_path(self) -> Path:
         store_dir = get_vector_store_dir(self.project_path)
         return store_dir / "code_graph.json"
-    
+
     @property
     def graph(self):
         if self._graph is None:
             self._load_graph()
         return self._graph
-    
-    @property
-    def vector_store(self) -> VectorStore:
-        if self._vector_store is None:
-            self._vector_store = VectorStore(project_path=self.project_path)
-        return self._vector_store
     
     def _load_graph(self):
         try:
@@ -110,11 +108,6 @@ class GraphStore:
                     relation_type=relation.relation_type,
                     **relation.metadata,
                 )
-    
-    def add_chunks_to_vector_store(self, chunks: List[Any]):
-        """Add code chunks to vector store for semantic search."""
-        if chunks:
-            self.vector_store.add_chunks(chunks)
     
     def _node_id(self, entity: CodeEntity) -> str:
         """Generate unique node ID for an entity."""
@@ -305,13 +298,11 @@ class GraphStore:
         }
     
     def clear(self):
-        """Clear the graph and vector store."""
+        """Clear the graph."""
         import networkx as nx
-        
+
         self._graph = nx.DiGraph()
         self._entity_map.clear()
-        if self._vector_store:
-            self._vector_store.clear()
         if self._graph_path.exists():
             self._graph_path.unlink()
     

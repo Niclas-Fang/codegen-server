@@ -128,7 +128,7 @@ def call_fim_api(prompt: str, suffix: str, includes: List[str],
             try:
                 error_detail = response.json()
                 error_msg += f" - {error_detail.get('error', {}).get('message', '未知错误')}"
-            except:
+            except Exception:
                 pass
             raise Exception(error_msg)
         

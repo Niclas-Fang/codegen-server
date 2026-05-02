@@ -242,8 +242,12 @@ class LSPClient:
             if content_length == 0:
                 continue
             
-            # Read content
-            content = self.process.stdout.read(content_length)
+            # Read content with timeout to prevent hanging on malformed responses
+            import select
+            if select.select([self.process.stdout], [], [], 10.0)[0]:
+                content = self.process.stdout.read(content_length)
+            else:
+                raise RuntimeError("LSP response read timed out")
             try:
                 message = json.loads(content)
             except json.JSONDecodeError:
@@ -444,98 +448,6 @@ class LSPClient:
     def __enter__(self):
         self.start()
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop()
-
-
-class FallbackCodeParser:
-    """
-    Fallback parser when LSP is unavailable.
-    Uses regex-based parsing for C/C++.
-    """
-    
-    def __init__(self, file_path: str, content: str):
-        self.file_path = file_path
-        self.content = content
-    
-    def parse(self) -> Tuple[List[Any], List[Any]]:
-        """Simple regex-based C/C++ parsing."""
-        import re
-        from .code_parser import CodeEntity, CodeRelation
-        
-        entities = []
-        relations = []
-        
-        # Add file entity
-        entities.append(CodeEntity(
-            name=Path(self.file_path).name,
-            entity_type="file",
-            source_file=self.file_path,
-            content=self.content,
-        ))
-        
-        # Function definitions
-        func_pattern = re.compile(
-            r'(?:^|\n)\s*(?:\w+\s+)+?(\w+)\s*\(([^)]*)\)\s*(?:const\s+)?(?:noexcept\s+)?\{',
-            re.MULTILINE
-        )
-        for match in func_pattern.finditer(self.content):
-            name = match.group(1)
-            if name in ("if", "while", "for", "switch", "catch", "return"):
-                continue
-            line_num = self.content[:match.start()].count("\n") + 1
-            
-            entities.append(CodeEntity(
-                name=name,
-                entity_type="function",
-                source_file=self.file_path,
-                line_start=line_num,
-                signature=match.group(0).strip()[:100],
-            ))
-            relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="contains",
-            ))
-        
-        # Classes/structs
-        class_pattern = re.compile(
-            r'(?:^|\n)\s*(?:class|struct)\s+(\w+)(?:\s*:\s*(?:public|private|protected)\s+(\w+))?',
-            re.MULTILINE
-        )
-        for match in class_pattern.finditer(self.content):
-            name = match.group(1)
-            parent = match.group(2)
-            line_num = self.content[:match.start()].count("\n") + 1
-            
-            entities.append(CodeEntity(
-                name=name,
-                entity_type="class",
-                source_file=self.file_path,
-                line_start=line_num,
-                signature=match.group(0).strip(),
-            ))
-            relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=name,
-                relation_type="contains",
-            ))
-            
-            if parent:
-                relations.append(CodeRelation(
-                    source=name,
-                    target=parent,
-                    relation_type="inherits",
-                ))
-        
-        # Includes
-        include_pattern = re.compile(r'#include\s+[<"]([^>"]+)[>"]')
-        for match in include_pattern.finditer(self.content):
-            relations.append(CodeRelation(
-                source=Path(self.file_path).name,
-                target=match.group(1),
-                relation_type="imports",
-            ))
-        
-        return entities, relations

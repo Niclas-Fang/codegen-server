@@ -1,11 +1,9 @@
 from typing import Dict, Any, List, Optional
 import os
-import re
 
 from .prompt_templates import build_code_completion_prompt
 from .model_providers import (
     get_provider,
-    BaseProvider,
     validate_model,
     get_default_model,
 )
@@ -14,7 +12,7 @@ RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() == "true"
 GRAPH_RAG_ENABLED = os.getenv("GRAPH_RAG_ENABLED", "true").lower() == "true"
 
 DEFAULT_MAX_TOKENS = 1000
-DEFAULT_PROVIDER = "zhipu"
+DEFAULT_PROVIDER = "deepseek"
 
 
 def validate_context(context: Dict[str, Any]) -> None:
