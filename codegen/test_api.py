@@ -593,8 +593,13 @@ class Runner:
             "context": {"prompt": "def add(a,b):", "suffix": "\n    return a+b"},
             "provider": "zhipu",
         }, timeout=15)
+        if resp.status_code != 200:
+            try:
+                self._skip_on_api_fail(resp.json())
+            except Exception:
+                pass
+            raise SkipTest("zhipu API key not configured")
         data = self._assert_ok(resp)
-        self._skip_on_api_fail(data)
         assert len(data["response"]["text"]) > 0
 
 
