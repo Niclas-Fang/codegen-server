@@ -62,7 +62,10 @@ class Runner:
     # -- helpers --
 
     def _post(self, url: str, data: dict, timeout: int = 10) -> requests.Response:
-        return requests.post(url, json=data, timeout=timeout)
+        try:
+            return requests.post(url, json=data, timeout=timeout)
+        except (requests.ConnectionError, requests.exceptions.ChunkedEncodingError):
+            return requests.post(url, json=data, timeout=timeout)
 
     def _get(self, url: str, timeout: int = 5) -> requests.Response:
         return requests.get(url, timeout=timeout)
