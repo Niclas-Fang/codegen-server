@@ -4,6 +4,7 @@ Provides embedding generation and vector storage using FAISS
 with per-project isolation and embedding cache
 """
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -35,7 +36,7 @@ class EmbeddingCache:
     
     def get(self, text: str) -> Optional[np.ndarray]:
         """Get embedding from cache if exists."""
-        key = hash(text)
+        key = hashlib.md5(text.encode()).hexdigest()
         if key in self._cache:
             self._update_access(key)
             return self._cache[key]
@@ -43,7 +44,7 @@ class EmbeddingCache:
     
     def put(self, text: str, embedding: np.ndarray):
         """Store embedding in cache."""
-        key = hash(text)
+        key = hashlib.md5(text.encode()).hexdigest()
         if key in self._cache:
             self._update_access(key)
             self._cache[key] = embedding
@@ -261,6 +262,33 @@ class VectorStore:
         
         self._save_index()
         return len(to_remove)
+
+    def remove_by_sources(self, sources: list[str]) -> int:
+        """Remove chunks from multiple source files in one batch rebuild."""
+        if not sources:
+            return 0
+        source_set = set(sources)
+        new_metadata = [m for m in self._metadata if m.get("source") not in source_set]
+        removed = len(self._metadata) - len(new_metadata)
+        if removed == 0:
+            return 0
+        self._metadata = new_metadata
+        if self._metadata:
+            self._rebuild_index()
+        else:
+            import faiss
+            self._index = faiss.IndexIDMap(faiss.IndexFlatIP(self.embedding_dimension))
+        self._save_index()
+        return removed
+
+    def _rebuild_index(self):
+        """Rebuild FAISS index from current metadata — used by remove_by_sources."""
+        import faiss
+        texts = [m["content"] for m in self._metadata]
+        embeddings = self._embed_texts(texts)
+        ids = np.array(range(len(self._metadata)), dtype=np.int64)
+        self._index = faiss.IndexIDMap(faiss.IndexFlatIP(self.embedding_dimension))
+        self._index.add_with_ids(embeddings, ids)
 
     def search(
         self,

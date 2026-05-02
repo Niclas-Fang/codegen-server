@@ -24,7 +24,9 @@ class GraphStore:
         self.project_path = project_path
         self._graph = None
         self._graph_path = self._get_graph_path()
-        self._entity_map: Dict[str, dict] = {}  # name -> entity data
+        self._entity_map: Dict[str, dict] = {}  # node_id -> entity data
+        self._name_index: Dict[str, str] = {}   # entity name -> node_id
+        self._source_index: Dict[str, list] = {} # source_file -> [node_id, ...]
         # reuse the global vector store singleton for this project
         if vector_store is not None:
             self.vector_store = vector_store
@@ -54,12 +56,24 @@ class GraphStore:
             with open(self._graph_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             self._graph = nx.node_link_graph(data, edges="links")
-            # Rebuild entity map
-            for node, attrs in self._graph.nodes(data=True):
-                self._entity_map[node] = dict(attrs)
+            self._rebuild_indexes()
         else:
             self._graph = nx.DiGraph()
-    
+
+    def _rebuild_indexes(self):
+        """Rebuild name and source reverse indexes from entity_map."""
+        self._entity_map.clear()
+        self._name_index.clear()
+        self._source_index.clear()
+        for node, attrs in self._graph.nodes(data=True):
+            self._entity_map[node] = dict(attrs)
+            name = attrs.get("name", "")
+            source = attrs.get("source_file", "")
+            if name:
+                self._name_index[name] = node
+            if source:
+                self._source_index.setdefault(source, []).append(node)
+
     def _save_graph(self):
         import networkx as nx
         
@@ -71,7 +85,7 @@ class GraphStore:
     def add_entities(self, entities: List[CodeEntity]):
         """Add code entities as graph nodes."""
         import networkx as nx
-        
+
         for entity in entities:
             node_id = self._node_id(entity)
             self.graph.add_node(
@@ -86,12 +100,16 @@ class GraphStore:
                 parent=entity.parent,
                 **entity.metadata,
             )
-            self._entity_map[node_id] = {
+            attrs = {
                 "name": entity.name,
                 "entity_type": entity.entity_type,
                 "source_file": entity.source_file,
                 "content": entity.content,
             }
+            self._entity_map[node_id] = attrs
+            # update reverse indexes
+            self._name_index[entity.name] = node_id
+            self._source_index.setdefault(entity.source_file, []).append(node_id)
     
     def add_relations(self, relations: List[CodeRelation]):
         """Add relationships as graph edges."""
@@ -116,16 +134,20 @@ class GraphStore:
         return f"{entity.entity_type}:{entity.name}@{entity.source_file}"
     
     def _resolve_node_id(self, name: str) -> Optional[str]:
-        """Resolve a name to a node ID."""
-        # Search by entity name in entity map
-        for nid, attrs in self._entity_map.items():
-            if attrs.get("name") == name:
-                return nid
+        """Resolve a name to a node ID — O(1) via reverse index."""
+        # direct name lookup
+        if name in self._name_index:
+            return self._name_index[name]
 
-        # Try file entity (match by basename or full path)
-        for nid in list(self._entity_map.keys()):
-            if nid.startswith("file:") and (nid.endswith(f"/{name}") or nid == f"file:{name}"):
+        # try file entity (basename or full path)
+        file_id = f"file:{name}"
+        if name in self._name_index and self._name_index[name].startswith("file:"):
+            return self._name_index[name]
+        for nid in (self._source_index.get(name, []) or []):
+            if nid.startswith("file:"):
                 return nid
+        if self.graph.has_node(file_id):
+            return file_id
 
         return None
     
@@ -205,13 +227,10 @@ class GraphStore:
             node_id = f"file:{source_file}"
             if self.graph.has_node(node_id):
                 mapped_results.append((node_id, score))
-            else:
-                # Try to find matching entity
-                for nid, attrs in self._entity_map.items():
-                    if attrs.get("source_file") == source_file:
-                        mapped_results.append((nid, score))
-                        break
-        
+            elif source_file in self._source_index:
+                # use reverse index instead of scanning entity_map
+                mapped_results.append((self._source_index[source_file][0], score))
+
         return mapped_results
     
     def graph_rag_retrieve(
@@ -303,6 +322,8 @@ class GraphStore:
 
         self._graph = nx.DiGraph()
         self._entity_map.clear()
+        self._name_index.clear()
+        self._source_index.clear()
         if self._graph_path.exists():
             self._graph_path.unlink()
     

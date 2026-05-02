@@ -174,6 +174,16 @@ def _build_function_lookup(
     return lookup
 
 
+def _flatten_symbols(symbols: List[Any]) -> List[Any]:
+    """Recursively flatten symbol tree into a list."""
+    result = []
+    for s in symbols:
+        result.append(s)
+        if s.children:
+            result.extend(_flatten_symbols(s.children))
+    return result
+
+
 def _extract_call_relations_lsp(
     symbols: List[Any],
     file_path: str,
@@ -181,35 +191,32 @@ def _extract_call_relations_lsp(
     file_functions: Dict[str, List[Tuple[int, int, str]]],
     relations: List[CodeRelation],
 ):
-    """Extract function call relationships using LSP references."""
-    for symbol in symbols:
-        if symbol.kind in ("function", "method"):
-            # Get references to this function
-            refs = lsp_client.get_references(
-                file_path,
-                symbol.selection_start.get("line", 0),
-                symbol.selection_start.get("character", 0),
-            )
+    """Extract function call relationships using LSP references.
 
-            for ref in refs:
-                # Find which function contains this reference
-                caller = _find_containing_function(
-                    ref.uri.replace("file://", ""),
-                    ref.start_line,
-                    file_functions,
-                )
-                if caller and caller != symbol.name:
-                    relations.append(CodeRelation(
-                        source=caller,
-                        target=symbol.name,
-                        relation_type="calls",
-                    ))
-
-        # Recurse into children
-        if symbol.children:
-            _extract_call_relations_lsp(
-                symbol.children, file_path, lsp_client, file_functions, relations
+    Flattens the symbol tree first, then queries references for each
+    function/method in a single pass — avoids recursion overhead.
+    """
+    all_symbols = _flatten_symbols(symbols)
+    for symbol in all_symbols:
+        if symbol.kind not in ("function", "method"):
+            continue
+        refs = lsp_client.get_references(
+            file_path,
+            symbol.selection_start.get("line", 0),
+            symbol.selection_start.get("character", 0),
+        )
+        for ref in refs:
+            caller = _find_containing_function(
+                ref.uri.replace("file://", ""),
+                ref.start_line,
+                file_functions,
             )
+            if caller and caller != symbol.name:
+                relations.append(CodeRelation(
+                    source=caller,
+                    target=symbol.name,
+                    relation_type="calls",
+                ))
 
 
 def _find_containing_function(

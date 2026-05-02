@@ -127,9 +127,9 @@ def build_index(directory: Path, project_path: str = "", verbose: bool = True, i
                     src = str(directory / src)
                 changed_sources.add(os.path.normpath(src))
             
-            for src in changed_sources:
-                if src in indexed_sources:
-                    vector_store.remove_by_source(src)
+            sources_to_remove = [s for s in changed_sources if s in indexed_sources]
+            if sources_to_remove:
+                vector_store.remove_by_sources(sources_to_remove)
             
             all_chunks = changed_chunks
         else:
