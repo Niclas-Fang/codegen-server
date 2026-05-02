@@ -8,7 +8,7 @@ version = "0.1.0"
 [tasks]
 migrate = { cmd = "python manage.py migrate", cwd = "codegen" }
 makemigrations = { cmd = "python manage.py makemigrations", cwd = "codegen" }
-dev = { cmd = "python manage.py runserver", cwd = "codegen" }
+dev = { cmd = "DJANGO_DEBUG=true python manage.py runserver", cwd = "codegen" }
 test = { cmd = "python test_api.py", cwd = "codegen" }
 serve = { cmd = "gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120 --access-logfile -", cwd = "codegen" }
 index = { cmd = "python -m completion.rag.indexer index", cwd = "codegen" }

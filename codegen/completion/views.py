@@ -1,10 +1,16 @@
 import json
 import os
+from django.conf import settings
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
+from .ratelimit import rate_limit
 from .services import call_fim_api
 from .chat_service import call_chat_api
 from .model_providers import get_all_models, get_available_providers, PROVIDER_CONFIG
+
+
+def _cors_origin():
+    return getattr(settings, "CORS_ALLOWED_ORIGIN", "*") or "*"
 
 
 def health(request):
@@ -15,21 +21,20 @@ def health(request):
         providers[name] = {"configured": key_set, "default_model": cfg["default_model"]}
     return JsonResponse({"status": "ok", "providers": providers})
 
-CORS_ORIGIN = os.getenv("CORS_ALLOWED_ORIGIN", "*")
-
 
 def cors_exempt(view_func):
-    """CORS decorator — origin configurable via CORS_ALLOWED_ORIGIN env var."""
+    """CORS decorator — origin from settings.CORS_ALLOWED_ORIGIN."""
 
     def wrapped_view(request, *args, **kwargs):
+        origin = _cors_origin()
         if request.method == "OPTIONS":
             response = HttpResponse()
-            response["Access-Control-Allow-Origin"] = CORS_ORIGIN
+            response["Access-Control-Allow-Origin"] = origin
             response["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
             response["Access-Control-Allow-Headers"] = "Content-Type"
             return response
         response = view_func(request, *args, **kwargs)
-        response["Access-Control-Allow-Origin"] = CORS_ORIGIN
+        response["Access-Control-Allow-Origin"] = origin
         response["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
         response["Access-Control-Allow-Headers"] = "Content-Type"
         return response
@@ -60,6 +65,7 @@ def models(request):
     )
 
 
+@rate_limit
 @csrf_exempt
 @cors_exempt
 def completion(request):
@@ -115,6 +121,7 @@ def completion(request):
         )
 
 
+@rate_limit
 @csrf_exempt
 @cors_exempt
 def chat(request):

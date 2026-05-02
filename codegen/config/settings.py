@@ -7,7 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ── security ────────────────────────────────────────────────
 
-DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() == "true"
+DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() == "true"
 
 _django_secret = os.getenv("DJANGO_SECRET_KEY", "")
 if _django_secret:
@@ -85,6 +85,11 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 
+# ── rate limiting ────────────────────────────────────────────
+
+RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))   # per window
+RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))        # seconds
+
 # ── security hardening (production) ──────────────────────────
 
 if not DEBUG:
@@ -94,7 +99,6 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = "DENY"
 
