@@ -5,7 +5,7 @@ To add a new provider: add an entry to PROVIDER_CONFIG and SUPPORTED_MODELS.
 
 import os
 import requests
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 DEFAULT_TIMEOUT = 30
 
@@ -210,6 +210,70 @@ class AnthropicProvider(BaseProvider):
 
 class DeepSeekProvider(OpenAICompatibleProvider):
     provider = "deepseek"
+
+    FIM_URL = "https://api.deepseek.com/beta/completions"
+    FIM_DEFAULT_TIMEOUT = 30
+
+    def fim(self, prompt: str, suffix: str, max_tokens: int = 100,
+            model: str = None) -> dict:
+        """DeepSeek Fill-in-the-Middle completion.
+
+        Returns {"text": str, "label": str} or raises on error.
+        """
+        cfg = PROVIDER_CONFIG[self.provider]
+        model = model or cfg["default_model"]
+        api_key = self.get_api_key()
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "model": model,
+            "prompt": prompt,
+            "suffix": suffix,
+            "max_tokens": max_tokens,
+        }
+
+        try:
+            resp = requests.post(self.FIM_URL, headers=headers, json=body, timeout=self.FIM_DEFAULT_TIMEOUT)
+        except requests.exceptions.Timeout:
+            raise Exception(f"{self.provider} FIM API 调用超时")
+        except requests.exceptions.ConnectionError:
+            raise Exception(f"无法连接到 {self.provider} API")
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"{self.provider} API 调用失败: {e}")
+
+        if resp.status_code != 200:
+            detail = ""
+            try:
+                detail = resp.json().get("error", {}).get("message", "")
+            except Exception:
+                pass
+            raise Exception(f"{self.provider} API 返回错误: {resp.status_code}" + (f" - {detail}" if detail else ""))
+
+        result = resp.json()
+        return self._parse_fim_response(result)
+
+    def _parse_fim_response(self, result: dict) -> Optional[dict]:
+        """Parse DeepSeek FIM completion response."""
+        if "choices" not in result or not result["choices"]:
+            return None
+        choice = result["choices"][0]
+        if "text" not in choice:
+            return None
+
+        text = choice["text"].strip()
+        text = text.replace("```cpp", "").replace("```python", "").replace("```c", "")
+        text = text.replace("```", "").strip()
+
+        if not text:
+            return None
+        if len(text) > 500:
+            text = text[:500]
+
+        label = text[:30].replace("\n", " ") + "..." if len(text) > 30 else text
+        return {"text": text, "label": label}
 
 
 class OpenAIProvider(OpenAICompatibleProvider):
