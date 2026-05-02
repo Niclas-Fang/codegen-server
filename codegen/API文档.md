@@ -13,9 +13,11 @@
 
 | 接口名称 | 方法 | 路径 | 说明 |
 |---------|------|------|------|
+| 健康检查 | GET | `/health` | 返回服务和 provider 配置状态 |
 | 代码补全 (FIM) | POST | `/completion` | 使用 FIM 模式获取代码补全建议 |
 | 代码补全 (Chat) | POST | `/chat` | 使用 Chat 模式获取代码补全建议 |
 | 模型列表 | GET | `/models` | 获取支持的模型和提供者列表 |
+| RAG 索引 | POST | `/rag/index` | 触发项目 RAG 索引（前端初始化时调用） |
 
 ---
 
@@ -196,7 +198,48 @@ Graph-RAG（Graph-based Retrieval-Augmented Generation）是传统 RAG 的增强
 - **传统 RAG**：只找语义相似的代码（"这个函数看起来像你写的"）
 - **Graph-RAG**：找语义相似 + 调用关系 + 继承关系 + 导入依赖的代码（"这个函数调用了你写的函数，所以可能相关"）
 
-### 4.2 Graph-RAG 架构
+### 4.2 RAG 索引接口
+
+**URL**: `/api/v1/rag/index`
+
+**方法**: `POST`
+
+前端在打开项目时调用一次，触发增量索引构建。首次调用执行全量索引，后续调用仅更新变更文件。
+
+**请求体参数**:
+
+| 参数名 | 类型 | 必填 | 说明 | 示例 |
+|-------|------|------|------|------|
+| directory | string | 是 | 项目根目录的绝对路径 | `"/home/user/myproject"` |
+| project_path | string | 否 | 项目标识，用于索引隔离。默认使用 directory | `"myproject"` |
+| full | boolean | 否 | 强制全量重建索引，默认 `false`（增量） | `true` |
+
+**请求示例**:
+```json
+{
+  "directory": "/home/user/myproject",
+  "project_path": "myproject"
+}
+```
+
+**成功响应**:
+```json
+{
+  "success": true,
+  "chunks_indexed": 128
+}
+```
+
+**错误响应**:
+```json
+{
+  "success": false,
+  "error_code": "INVALID_PARAMS",
+  "error": "缺少必填参数: directory"
+}
+```
+
+### 4.3 Graph-RAG 架构
 
 ```
 代码文件 → AST解析 → 实体（函数/类/导入）
@@ -208,7 +251,7 @@ Graph-RAG（Graph-based Retrieval-Augmented Generation）是传统 RAG 的增强
             检索：语义搜索种子 → 图遍历扩展 → 混合排序
 ```
 
-### 4.3 RAG 参数说明
+### 4.4 RAG 参数说明
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
@@ -223,20 +266,20 @@ Graph-RAG（Graph-based Retrieval-Augmented Generation）是传统 RAG 的增强
 | `LSP_COMMAND` | `clangd` | LSP 命令，用于代码解析 |
 | `LSP_FALLBACK_COMMANDS` | `clangd,ccls` | LSP 回退命令列表，逗号分隔，按顺序尝试启动 |
 
-### 4.4 RAG 使用流程
+### 4.5 RAG 使用流程
 
 1. **首次索引**：`indexer` 同时构建向量库 + 代码知识图谱；自动检测可用的 LSP（clangd → ccls 按序回退）
 2. **增量更新**：代码变更后重新索引，基于文件修改时间（mtime）自动检测变更文件
 3. **请求时检索**：Chat API 优先使用 Graph-RAG，失败时回退到传统 RAG
 
-### 4.5 项目隔离
+### 4.6 项目隔离
 
 不同 `project_path` 使用完全独立的存储：
 - 向量库：`rag_data/vector_stores/{project_name}_{hash}/code_index.faiss`
 - 知识图谱：`rag_data/vector_stores/{project_name}_{hash}/code_graph.json`
 - 元数据：`rag_data/vector_stores/{project_name}_{hash}/metadata.json`
 
-### 4.6 includes 自动提取
+### 4.7 includes 自动提取
 
 如果请求中未提供 `includes` 字段，后端会自动从 `prompt` 中提取：
 - Python: `import xxx`, `from xxx import yyy`
@@ -1147,6 +1190,7 @@ A: 查看错误码（error_code）：
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v3.2 | 2026-05-02 | 新增 `/api/v1/rag/index` 索引接口（前端初始化调用）；反向索引 O(1) 查找；批量删除优化；嵌入缓存 MD5 持久化 |
 | v3.1 | 2026-05-01 | LSP 回退机制：自动检测 clangd/ccls，支持 LSP_FALLBACK_COMMANDS 配置；增量索引基于 mtime 精确检测；代码解析性能优化 |
 | v3.0 | 2026-04-29 | Graph-RAG：新增代码知识图谱（NetworkX）、AST代码解析、图遍历检索、混合语义+图检索、use_graph_rag参数 |
 | v2.1 | 2026-04-26 | RAG增强：新增项目隔离向量库（project_path参数）、增量索引、相似度阈值（0.5）、Embedding缓存、includes自动提取、use_rag请求级开关 |
