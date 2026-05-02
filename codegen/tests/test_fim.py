@@ -1,6 +1,6 @@
 """FIM (Fill-in-the-Middle) completion tests."""
 
-from tests.runner import BaseRunner, expects, validate_cpp_syntax
+from tests.runner import BaseRunner, expects
 
 
 class TestFIM(BaseRunner):
@@ -50,9 +50,7 @@ class TestFIM(BaseRunner):
         s = data["suggestion"]
         assert len(s["text"]) > 0
         assert len(s["label"]) > 0
-        err = validate_cpp_syntax("int main() {" + s["text"] + "\n  return 0;\n}")
-        if err:
-            print(f"\n  [WARN] syntax issue: {err[:100]}")
+        # partial completions naturally fail standalone syntax check — skip validation
 
     @expects("pass")
     def test_06_fim_full_request(self):
