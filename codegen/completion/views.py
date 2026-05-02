@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 from django.conf import settings
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -63,6 +64,50 @@ def models(request):
             "models": get_all_models(),
         }
     )
+
+
+@rate_limit
+@csrf_exempt
+@cors_exempt
+def rag_index(request):
+    """Trigger RAG indexing for a project directory. Called by frontend on init."""
+    if request.method != "POST":
+        return JsonResponse(
+            {"success": False, "error_code": "INVALID_METHOD", "error": "只支持 POST 请求"},
+            status=405,
+        )
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse(
+            {"success": False, "error_code": "INVALID_JSON", "error": "无效的JSON格式"},
+            status=400,
+        )
+
+    project_dir = data.get("directory", "")
+    project_path = data.get("project_path", project_dir)
+    full_rebuild = data.get("full", False)
+
+    if not project_dir:
+        return JsonResponse(
+            {"success": False, "error_code": "INVALID_PARAMS", "error": "缺少必填参数: directory"},
+            status=400,
+        )
+
+    from .rag.indexer import build_index
+    try:
+        count = build_index(
+            Path(project_dir),
+            project_path=project_path,
+            verbose=False,
+            incremental=not full_rebuild,
+        )
+        return JsonResponse({"success": True, "chunks_indexed": count})
+    except Exception as e:
+        return JsonResponse(
+            {"success": False, "error_code": "INDEX_ERROR", "error": str(e)},
+            status=500,
+        )
 
 
 @rate_limit
